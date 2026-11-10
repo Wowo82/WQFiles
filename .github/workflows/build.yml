@@ -1,0 +1,67 @@
+name: Build IPA
+
+# The app targets iOS 26.0 and links against the iOS SDK, so it needs a macOS
+# runner with that SDK. The workflow prints the toolchain it got and fails with
+# a readable message when the image is older than the deployment target.
+on:
+  push:
+    branches: [cn, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Regression tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the toolchain
+        run: |
+          xcodebuild -version
+          echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+          python3 - <<'PY'
+          import subprocess, sys
+          version = subprocess.check_output(
+              ["xcrun", "--sdk", "iphoneos", "--show-sdk-version"], text=True).strip()
+          if int(version.split(".")[0]) < 26:
+              sys.exit(f"iOS SDK {version} is too old: WQ Files targets iOS 26.0. "
+                       "Pick a runner image with Xcode 26 or later.")
+          print(f"iOS SDK {version} can build the iOS 26.0 target")
+          PY
+
+      - name: Run the regression suite
+        run: ./tests/run_all_tests.sh
+
+  build:
+    name: Build WQFiles.ipa
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # build.sh runs the same suite before packaging; the test job already did.
+      - name: Build and package
+        run: ./build.sh
+        env:
+          WQ_SKIP_PREFLIGHT: 1
+
+      - name: Show the artifact
+        run: |
+          ls -lh WQFiles.ipa
+          unzip -l WQFiles.ipa | tail -5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WQFiles-ipa
+          path: WQFiles.ipa
+          if-no-files-found: error
+          retention-days: 30

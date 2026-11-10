@@ -161,6 +161,12 @@ updater validates the IPA's embedded metadata before atomically replacing
 `source.json`; its version/build arguments must match the artifact, and an
 existing release description is preserved when no new notes are supplied.
 
+GitHub Actions does the same on every push to `cn` or `main` and on a manual
+run: `.github/workflows/build.yml` runs the regression suite in one job, then
+`build.sh` in a second and uploads `WQFiles.ipa` as the `WQFiles-ipa` artifact.
+The runner image needs an iOS 26 SDK or later; the workflow says so plainly
+instead of failing somewhere inside the compiler.
+
 ## Regression tests
 
 Run `./tests/run_all_tests.sh` on macOS with Xcode and Python 3. It runs twelve
