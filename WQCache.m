@@ -10,6 +10,7 @@
 #import "WQAccess.h"
 #import "WQLaunchServices.h"
 #import "WQCacheSafety.h"
+#import "WQLocalize.h"
 
 #import <errno.h>
 #import <sys/stat.h>
@@ -80,15 +81,15 @@ static NSString *WQCacheConfirmationScope(NSArray<WQCacheItem *> *items)
     NSUInteger appCount = 0;
     WQCacheSelectionCategories(items, &hasApps, &hasCrashLogs, &appCount);
     if (hasApps && hasCrashLogs) {
-        return [NSString stringWithFormat:@"Delete Library/Caches and tmp for %lu app%@, plus Crash Logs",
+        return [NSString stringWithFormat:wq_text(@"Delete Library/Caches and tmp for %lu app%@, plus Crash Logs"),
                 (unsigned long)appCount, appCount == 1 ? @"" : @"s"];
     }
     if (hasApps) {
-        return [NSString stringWithFormat:@"Delete Library/Caches and tmp for %lu app%@",
+        return [NSString stringWithFormat:wq_text(@"Delete Library/Caches and tmp for %lu app%@"),
                 (unsigned long)appCount, appCount == 1 ? @"" : @"s"];
     }
-    if (hasCrashLogs) return @"Delete Crash Logs";
-    return @"Delete the selected cache targets";
+    if (hasCrashLogs) return wq_text(@"Delete Crash Logs");
+    return wq_text(@"Delete the selected cache targets");
 }
 
 static NSString *WQCacheFooterScope(NSArray<WQCacheItem *> *items)
@@ -96,17 +97,17 @@ static NSString *WQCacheFooterScope(NSArray<WQCacheItem *> *items)
     BOOL hasApps = NO, hasCrashLogs = NO;
     WQCacheSelectionCategories(items, &hasApps, &hasCrashLogs, NULL);
     if (hasApps && hasCrashLogs) {
-        return @"Clears each selected app's Library/Caches and tmp, and deletes selected Crash Logs. Apps rebuild "
+        return wq_text(@"Clears each selected app's Library/Caches and tmp, and deletes selected Crash Logs. Apps rebuild "
                 "their caches as you use them; some keep offline content (music, maps, downloads) there and "
-                "will download it again. No backup is kept.";
+                "will download it again. No backup is kept.");
     }
     if (hasApps) {
-        return @"Clears each selected app's Library/Caches and tmp. Apps rebuild their caches as you use them; "
+        return wq_text(@"Clears each selected app's Library/Caches and tmp. Apps rebuild their caches as you use them; "
                 "some keep offline content (music, maps, downloads) there and will download it again. No backup "
-                "is kept.";
+                "is kept.");
     }
-    if (hasCrashLogs) return @"Deletes selected Crash Logs. This cannot be undone. No backup is kept.";
-    return @"Select app caches or Crash Logs to see the deletion scope. No backup is kept.";
+    if (hasCrashLogs) return wq_text(@"Deletes selected Crash Logs. This cannot be undone. No backup is kept.");
+    return wq_text(@"Select app caches or Crash Logs to see the deletion scope. No backup is kept.");
 }
 
 typedef NS_ENUM(NSInteger, WQCacheMeasurementState) {
@@ -189,13 +190,13 @@ static BOOL WQCacheRecordIdentityMatches(WQCacheTargetRecord *record, NSString *
     WQCachePathState state = WQCacheInspectPath(record.path, &st);
     if (!record.existed) {
         if (state == WQCachePathMissing) return YES;
-        if (reason) *reason = [NSString stringWithFormat:@"%@ appeared after the scan", record.path];
+        if (reason) *reason = [NSString stringWithFormat:wq_text(@"%@ appeared after the scan"), record.path];
         return NO;
     }
     if (state != WQCachePathExisting || !record.identityKnown ||
         st.st_dev != record.device || st.st_ino != record.inode ||
         (st.st_mode & S_IFMT) != record.mode) {
-        if (reason) *reason = [NSString stringWithFormat:@"%@ changed after the scan", record.path];
+        if (reason) *reason = [NSString stringWithFormat:wq_text(@"%@ changed after the scan"), record.path];
         return NO;
     }
     return YES;
@@ -212,12 +213,12 @@ static BOOL WQCacheCrashPathIsSafe(NSString *path)
 static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
 {
     if (item.limited) {
-        if (reason) *reason = @"the scan had limited access";
+        if (reason) *reason = wq_text(@"the scan had limited access");
         return NO;
     }
     if (item.crashLogs) {
         if (item.targetRecords.count != 1 || !WQCacheCrashPathIsSafe(item.targets.firstObject)) {
-            if (reason) *reason = @"the crash-log target is not the expected canonical directory";
+            if (reason) *reason = wq_text(@"the crash-log target is not the expected canonical directory");
             return NO;
         }
         return WQCacheRecordIdentityMatches(item.targetRecords.firstObject, reason);
@@ -225,28 +226,28 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     if (item.targetRecords.count != 2 || item.targets.count != 2 ||
         ![item.targets[0] isEqualToString:item.targetRecords[0].path] ||
         ![item.targets[1] isEqualToString:item.targetRecords[1].path]) {
-        if (reason) *reason = @"the scanned cache targets are incomplete";
+        if (reason) *reason = wq_text(@"the scanned cache targets are incomplete");
         return NO;
     }
     if (!item.containerIdentityKnown || !WQCacheSafetyHasNoSymlinkAncestry(item.containerPath, NO)) {
-        if (reason) *reason = @"the app container identity or ancestry is unavailable";
+        if (reason) *reason = wq_text(@"the app container identity or ancestry is unavailable");
         return NO;
     }
     struct stat container = {0};
     if (WQCacheInspectPath(item.containerPath, &container) != WQCachePathExisting ||
         !S_ISDIR(container.st_mode) || container.st_dev != item.containerDevice ||
         container.st_ino != item.containerInode || (container.st_mode & S_IFMT) != item.containerMode) {
-        if (reason) *reason = [NSString stringWithFormat:@"%@ changed after the scan", item.name];
+        if (reason) *reason = [NSString stringWithFormat:wq_text(@"%@ changed after the scan"), item.name];
         return NO;
     }
     NSString *label = wq_container_label(item.containerPath);
     if (!item.bundleID.length || ![label isEqualToString:item.bundleID]) {
-        if (reason) *reason = [NSString stringWithFormat:@"%@ no longer has the scanned container identity", item.name];
+        if (reason) *reason = [NSString stringWithFormat:wq_text(@"%@ no longer has the scanned container identity"), item.name];
         return NO;
     }
     for (WQCacheTargetRecord *record in item.targetRecords) {
         if (!WQCacheSafetyTargetMatchesContainer(record.path, item.containerPath, record.relativePath)) {
-            if (reason) *reason = [NSString stringWithFormat:@"%@ has unsafe path ancestry", record.path];
+            if (reason) *reason = [NSString stringWithFormat:wq_text(@"%@ has unsafe path ancestry"), record.path];
             return NO;
         }
         if (!WQCacheRecordIdentityMatches(record, reason)) return NO;
@@ -384,12 +385,12 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Cache Cleaner";
+    self.title = wq_text(@"Cache Cleaner");
     self.tableView.tableHeaderView = wq_device_header(self.view.bounds.size.width);
     UISearchController *search = [[UISearchController alloc] initWithSearchResultsController:nil];
     search.searchResultsUpdater = self;
     search.obscuresBackgroundDuringPresentation = NO;
-    search.searchBar.placeholder = @"Search apps";
+    search.searchBar.placeholder = wq_text(@"Search apps");
     self.navigationItem.searchController = search;
     self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
@@ -457,30 +458,30 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         return;
     }
     if (_cleaning) {
-        UIBarButtonItem *stop = [[UIBarButtonItem alloc] initWithTitle:@"Stop" style:UIBarButtonItemStylePlain
+        UIBarButtonItem *stop = [[UIBarButtonItem alloc] initWithTitle:wq_text(@"Stop") style:UIBarButtonItemStylePlain
                                                                  target:self action:@selector(stopClean)];
         self.navigationItem.rightBarButtonItems = @[stop];
         return;
     }
     NSUInteger n = 0;
     for (WQCacheItem *it in _items) if (it.selected) n++;
-    UIBarButtonItem *clean = [[UIBarButtonItem alloc] initWithTitle:@"Clean" style:wq_primary_button_style()
+    UIBarButtonItem *clean = [[UIBarButtonItem alloc] initWithTitle:wq_text(@"Clean") style:wq_primary_button_style()
                                                              target:self action:@selector(confirmClean)];
     clean.enabled = n > 0 && !_cleanRequiresRescan;
     NSArray *visible = self.visibleItems;
     BOOL allVisible = visible.count > 0;
     for (WQCacheItem *it in visible) if (it.limited || !it.selected) { allVisible = NO; break; }
     __weak typeof(self) weakSelf = self;
-    UIAction *__unused all = [UIAction actionWithTitle:@"Select All" image:[UIImage systemImageNamed:@"checkmark.circle"]
+    UIAction *__unused all = [UIAction actionWithTitle:wq_text(@"Select All") image:[UIImage systemImageNamed:@"checkmark.circle"]
                                    identifier:nil handler:^(UIAction *__unused a) { [weakSelf selectWhere:^BOOL(WQCacheItem *__unused it) { return YES; }]; }];
-    UIAction *none = [UIAction actionWithTitle:@"Select None" image:[UIImage systemImageNamed:@"circle"]
+    UIAction *none = [UIAction actionWithTitle:wq_text(@"Select None") image:[UIImage systemImageNamed:@"circle"]
                                     identifier:nil handler:^(UIAction *__unused a) { [weakSelf selectWhere:^BOOL(WQCacheItem *__unused it) { return NO; }]; }];
-    UIAction *large = [UIAction actionWithTitle:@"Select Large Caches (50 MB+)" image:[UIImage systemImageNamed:@"arrow.up.circle"]
+    UIAction *large = [UIAction actionWithTitle:wq_text(@"Select Large Caches (50 MB+)") image:[UIImage systemImageNamed:@"arrow.up.circle"]
                                      identifier:nil handler:^(UIAction *__unused a) {
         [weakSelf selectWhere:^BOOL(WQCacheItem *__unused it) { return it.bytes >= 50ull * 1000 * 1000; }];
     }];
     all.state = allVisible ? UIMenuElementStateOn : UIMenuElementStateOff;
-    UIBarButtonItem *select = [[UIBarButtonItem alloc] initWithTitle:@"Select"
+    UIBarButtonItem *select = [[UIBarButtonItem alloc] initWithTitle:wq_text(@"Select")
                                                                 menu:[UIMenu menuWithChildren:@[all, none, large]]];
     select.enabled = visible.count > 0;
     self.navigationItem.rightBarButtonItems = @[clean, select];
@@ -506,7 +507,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     _cleanRequiresRescan = NO;
     _result = nil;
     [self updateButtons];
-    [self setStatus:@"Finding apps…"];
+    [self setStatus:wq_text(@"Finding apps…")];
     dispatch_async(wq_io(), ^{
         NSMutableArray<WQCacheItem *> *items = [NSMutableArray new];
         NSMutableArray<NSString *> *emptyRoots = [NSMutableArray new];
@@ -523,7 +524,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
             NSArray *containers = wq_enumerate(root, 0, cancellation, ^(int64_t done, int64_t total, NSUInteger __unused f) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                    [self setStatus:[NSString stringWithFormat:@"Finding %@… %lld%%", kind, (long long)(done * 100 / total)]];
+                    [self setStatus:[NSString stringWithFormat:wq_text(@"Finding %@… %lld%%"), kind, (long long)(done * 100 / total)]];
                 });
             });
             if (!containers) {
@@ -536,7 +537,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
             if (!cancellation.isCancelled && !wq_display_names_loaded()) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                [self setStatus:@"Reading app names…"];
+                [self setStatus:wq_text(@"Reading app names…")];
             });
             wq_load_display_names();
         }
@@ -548,7 +549,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
                 if (idx % 10 == 0 || idx == containers.count) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                        [self setStatus:[NSString stringWithFormat:@"Measuring %@ %lu of %lu…", kind,
+                        [self setStatus:[NSString stringWithFormat:wq_text(@"Measuring %@ %lu of %lu…"), kind,
                                          (unsigned long)idx, (unsigned long)containers.count]];
                     });
                 }
@@ -573,7 +574,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
                     scanLimited = YES;
                     limitedContainers++;
                     wq_log(@"cache scan: %@ (%@) %@", c.lastPathComponent, wq_bundle_id_for_container(c) ?: @"unknown app",
-                           safeContainer ? @"refused access" : @"failed the path safety check");
+                           safeContainer ? wq_text(@"refused access") : wq_text(@"failed the path safety check"));
                 }
                 if (cacheState == WQCacheMeasurementLimited || tempState == WQCacheMeasurementLimited) {
                     scanLimited = YES;
@@ -624,7 +625,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         }
         if (crashState == WQCacheMeasurementLimited || crash > 0) {
             WQCacheItem *logs = [WQCacheItem new];
-            logs.name = @"Crash Logs";
+            logs.name = wq_text(@"Crash Logs");
             logs.targets = @[kCrashLogsPath];
             logs.cacheBytes = crash;
             logs.cacheKnown = crashState != WQCacheMeasurementLimited;
@@ -639,27 +640,27 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         }];
         NSMutableArray<NSString *> *notes = [NSMutableArray new];
         if (failedEnumerations) {
-            [notes addObject:[NSString stringWithFormat:@"%lu container enumeration%@ failed",
+            [notes addObject:[NSString stringWithFormat:wq_text(@"%lu container enumeration%@ failed"),
                               (unsigned long)failedEnumerations, failedEnumerations == 1 ? @"" : @"s"]];
         }
         if (limitedContainers) {
-            [notes addObject:[NSString stringWithFormat:@"%lu container%@ had limited access",
+            [notes addObject:[NSString stringWithFormat:wq_text(@"%lu container%@ had limited access"),
                               (unsigned long)limitedContainers, limitedContainers == 1 ? @"" : @"s"]];
         }
         if (limitedMeasurements) {
-            [notes addObject:[NSString stringWithFormat:@"%lu cache tree measurement%@ was limited",
+            [notes addObject:[NSString stringWithFormat:wq_text(@"%lu cache tree measurement%@ was limited"),
                               (unsigned long)limitedMeasurements, limitedMeasurements == 1 ? @"" : @"s"]];
         }
         if (missingIdentities) {
-            [notes addObject:[NSString stringWithFormat:@"%lu container%@ had no identifier or identity",
+            [notes addObject:[NSString stringWithFormat:wq_text(@"%lu container%@ had no identifier or identity"),
                               (unsigned long)missingIdentities, missingIdentities == 1 ? @"" : @"s"]];
         }
         NSString *note = nil;
         if (scanLimited) {
-            [notes addObject:@"limited rows are excluded; the remaining rows can still be cleaned"];
-            note = [NSString stringWithFormat:@"Scan incomplete: %@. See Log.", [notes componentsJoinedByString:@"; "]];
+            [notes addObject:wq_text(@"limited rows are excluded; the remaining rows can still be cleaned")];
+            note = [NSString stringWithFormat:wq_text(@"Scan incomplete: %@. See Log."), [notes componentsJoinedByString:@"; "]];
         } else if (emptyRoots.count) {
-            note = [NSString stringWithFormat:@"No %@ container%@ found.",
+            note = [NSString stringWithFormat:wq_text(@"No %@ container%@ found."),
                     [emptyRoots componentsJoinedByString:@" or "], emptyRoots.count == 1 ? @"" : @"s"];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -692,9 +693,9 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     NSUInteger shown = self.visibleItems.count;
     NSUInteger appCount = 0;
     for (WQCacheItem *item in _items) if (!item.crashLogs) appCount++;
-    if (!appCount) return @"Crash Logs";
-    return _query.length ? [NSString stringWithFormat:@"%lu of %lu", (unsigned long)shown, (unsigned long)_items.count]
-                         : [NSString stringWithFormat:@"%lu apps and extensions", (unsigned long)appCount];
+    if (!appCount) return wq_text(@"Crash Logs");
+    return _query.length ? [NSString stringWithFormat:wq_text(@"%lu of %lu"), (unsigned long)shown, (unsigned long)_items.count]
+                         : [NSString stringWithFormat:wq_text(@"%lu apps and extensions"), (unsigned long)appCount];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
@@ -702,7 +703,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     if (section == 0 || !_items.count) return nil;
     NSArray<WQCacheItem *> *selected = [_items filteredArrayUsingPredicate:
         [NSPredicate predicateWithFormat:@"selected == YES"]];
-    return [WQCacheFooterScope(selected) stringByAppendingString:@" Close running apps first."];
+    return [WQCacheFooterScope(selected) stringByAppendingString:wq_text(@" Close running apps first.")];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -714,13 +715,13 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         NSUInteger n = 0;
         for (WQCacheItem *it in _items) { total += it.bytes; if (it.selected) { selected += it.bytes; n++; } }
         BOOL busy = _scanning || _cleaning;
-        cell.captionLabel.text = busy ? (_cleaning ? @"Cleaning" : @"Scanning") : @"Reclaimable";
+        cell.captionLabel.text = busy ? (_cleaning ? wq_text(@"Cleaning") : wq_text(@"Scanning")) : wq_text(@"Reclaimable");
         if (busy) [cell.spinner startAnimating]; else [cell.spinner stopAnimating];
         cell.totalLabel.text = (_scanning && !_items.count) ? @"–" : wq_size_text(total);
         cell.bar.progress = total ? (float)((double)selected / (double)total) : 0;
         cell.bar.hidden = _scanning && !_items.count;
         cell.statusLabel.text = _status ?: _result
-            ?: [NSString stringWithFormat:@"%@ selected in %lu item%@", wq_size_text(selected), (unsigned long)n, n == 1 ? @"" : @"s"];
+            ?: [NSString stringWithFormat:wq_text(@"%@ selected in %lu item%@"), wq_size_text(selected), (unsigned long)n, n == 1 ? @"" : @"s"];
         return cell;
     }
     WQCleanerCell *cell = [tableView dequeueReusableCellWithIdentifier:@"item"]
@@ -728,12 +729,12 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     WQCacheItem *item = self.visibleItems[(NSUInteger)indexPath.row];
     cell.nameLabel.text = item.name;
     if (item.crashLogs) {
-        cell.detailLabel.text = item.cacheKnown ? @"Crash Logs · osanalytics" : @"Crash Logs · access limited";
+        cell.detailLabel.text = item.cacheKnown ? wq_text(@"Crash Logs · osanalytics") : wq_text(@"Crash Logs · access limited");
     } else {
-        NSString *cache = item.cacheKnown ? wq_size_text(item.cacheBytes) : @"unknown";
-        NSString *temp = item.tempKnown ? wq_size_text(item.tempBytes) : @"unknown";
-        cell.detailLabel.text = [NSString stringWithFormat:@"cache %@ · temp %@%@", cache, temp,
-                                 item.limited ? @" · access limited" : @""];
+        NSString *cache = item.cacheKnown ? wq_size_text(item.cacheBytes) : wq_text(@"unknown");
+        NSString *temp = item.tempKnown ? wq_size_text(item.tempBytes) : wq_text(@"unknown");
+        cell.detailLabel.text = [NSString stringWithFormat:wq_text(@"cache %@ · temp %@%@"), cache, temp,
+                                 item.limited ? wq_text(@" · access limited") : @""];
     }
     cell.sizeLabel.text = wq_size_text(item.bytes);
     cell.iconView.image = wq_app_icon(item.bundleID)
@@ -750,8 +751,8 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     if (indexPath.section == 0 || _scanning || _cleaning) return;
     WQCacheItem *item = self.visibleItems[(NSUInteger)indexPath.row];
     if (item.limited) {
-        wq_alert(self, @"Not cleanable",
-                 @"This row has incomplete access or identity information. Scan again while the app is closed, or use its file browser entry to inspect it.");
+        wq_alert(self, wq_text(@"Not cleanable"),
+                 wq_text(@"This row has incomplete access or identity information. Scan again while the app is closed, or use its file browser entry to inspect it."));
         return;
     }
     item.selected = !item.selected;
@@ -777,20 +778,20 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         NSMutableArray *actions = [NSMutableArray new];
         if (item.crashLogs) {
             NSString *root = item.targets.firstObject;
-            [actions addObject:[UIAction actionWithTitle:@"Show Crash Logs in File Browser" image:[UIImage systemImageNamed:@"folder"]
-                                              identifier:nil handler:^(UIAction *__unused a) { [weakSelf openFolder:root title:@"Crash Logs"]; }]];
+            [actions addObject:[UIAction actionWithTitle:wq_text(@"Show Crash Logs in File Browser") image:[UIImage systemImageNamed:@"folder"]
+                                              identifier:nil handler:^(UIAction *__unused a) { [weakSelf openFolder:root title:wq_text(@"Crash Logs")]; }]];
         } else {
             NSString *caches = item.targets[0], *tmp = item.targets[1];
-            [actions addObject:[UIAction actionWithTitle:@"Show Caches in File Browser" image:[UIImage systemImageNamed:@"folder"]
+            [actions addObject:[UIAction actionWithTitle:wq_text(@"Show Caches in File Browser") image:[UIImage systemImageNamed:@"folder"]
                                               identifier:nil handler:^(UIAction *__unused a) {
-                [weakSelf openFolder:caches title:[item.name stringByAppendingString:@" · Caches"]];
+                [weakSelf openFolder:caches title:[item.name stringByAppendingString:wq_text(@" · Caches")]];
             }]];
             if (item.tempBytes > 0)
-                [actions addObject:[UIAction actionWithTitle:@"Show tmp in File Browser" image:[UIImage systemImageNamed:@"folder"]
+                [actions addObject:[UIAction actionWithTitle:wq_text(@"Show tmp in File Browser") image:[UIImage systemImageNamed:@"folder"]
                                                   identifier:nil handler:^(UIAction *__unused a) {
-                    [weakSelf openFolder:tmp title:[item.name stringByAppendingString:@" · tmp"]];
+                    [weakSelf openFolder:tmp title:[item.name stringByAppendingString:wq_text(@" · tmp")]];
                 }]];
-            [actions addObject:[UIAction actionWithTitle:@"Show App Data in File Browser" image:[UIImage systemImageNamed:@"folder.badge.gearshape"]
+            [actions addObject:[UIAction actionWithTitle:wq_text(@"Show App Data in File Browser") image:[UIImage systemImageNamed:@"folder.badge.gearshape"]
                                               identifier:nil handler:^(UIAction *__unused a) {
                 [weakSelf openFolder:caches.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent title:item.name];
             }]];
@@ -812,7 +813,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
 - (void)stopClean
 {
     [_cleanCancellation cancel];
-    [self setStatus:@"Stopping after the current item…"];
+    [self setStatus:wq_text(@"Stopping after the current item…")];
 }
 
 - (void)confirmClean
@@ -825,12 +826,12 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
         sel += item.bytes;
     }
     if (!selected.count) return;
-    NSString *msg = [NSString stringWithFormat:@"%@, about %@? This cannot be undone. Close the selected apps first; you can stop between items.",
+    NSString *msg = [NSString stringWithFormat:wq_text(@"%@, about %@? This cannot be undone. Close the selected apps first; you can stop between items."),
                      WQCacheConfirmationScope(selected), wq_size_text(sel)];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clean caches?" message:msg
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:wq_text(@"Clean caches?") message:msg
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Clean" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Clean") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
         [self clean];
     }]];
     [self presentViewController:alert animated:YES completion:nil];
@@ -843,7 +844,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
     _cleanCancellation = cancellation;
     _cleaning = YES;
     [self updateButtons];
-    [self setStatus:@"Cleaning…"];
+    [self setStatus:wq_text(@"Cleaning…")];
     dispatch_async(wq_io(), ^{
         unsigned long long freed = 0;
         BOOL allOk = YES;
@@ -854,7 +855,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
             NSString *reason = nil;
             if (!WQCacheValidateItem(item, &reason)) {
                 allOk = NO;
-                validationFailure = validationFailure ?: [NSString stringWithFormat:@"%@ (%@)", item.name, reason ?: @"identity changed"];
+                validationFailure = validationFailure ?: [NSString stringWithFormat:@"%@ (%@)", item.name, reason ?: wq_text(@"identity changed")];
                 wq_log(@"clean: refusing %@ because %@", item.name, reason ?: @"identity validation failed");
             }
         }
@@ -865,7 +866,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
                 self->_scanLimited = YES;
                 self->_cleanRequiresRescan = YES;
                 self->_status = nil;
-                self->_result = [NSString stringWithFormat:@"Clean cancelled: %@. Scan again before retrying.", validationFailure];
+                self->_result = [NSString stringWithFormat:wq_text(@"Clean cancelled: %@. Scan again before retrying."), validationFailure];
                 [self.tableView reloadData];
                 [self updateButtons];
             });
@@ -876,7 +877,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
             if (cancellation.isCancelled) { cancelled = YES; break; }
             i++;
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self setStatus:[NSString stringWithFormat:@"Cleaning %lu of %lu: %@",
+                [self setStatus:[NSString stringWithFormat:wq_text(@"Cleaning %lu of %lu: %@"),
                                  (unsigned long)i, (unsigned long)selected.count, item.name]];
             });
             for (WQCacheTargetRecord *record in item.targetRecords) {
@@ -884,7 +885,7 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
                 NSString *reason = nil;
                 if (!WQCacheValidateItem(item, &reason)) {
                     allOk = NO;
-                    validationFailure = [NSString stringWithFormat:@"%@ (%@)", item.name, reason ?: @"identity changed"];
+                    validationFailure = [NSString stringWithFormat:@"%@ (%@)", item.name, reason ?: wq_text(@"identity changed")];
                     wq_log(@"clean: stopped before %@ because %@", record.path, reason ?: @"identity validation failed");
                     break;
                 }
@@ -902,22 +903,22 @@ static BOOL WQCacheValidateItem(WQCacheItem *item, NSString **reason)
             if (cancelled) {
                 self->_status = nil;
                 [self scan];
-                self->_result = [NSString stringWithFormat:@"Stopped. Freed %@.%@", wq_size_text(freed),
-                                 allOk ? @"" : @" Some items could not be removed (see Log)."];
+                self->_result = [NSString stringWithFormat:wq_text(@"Stopped. Freed %@.%@"), wq_size_text(freed),
+                                 allOk ? @"" : wq_text(@" Some items could not be removed (see Log).")];
                 return;
             }
             if (validationFailure) {
                 self->_scanLimited = YES;
                 self->_cleanRequiresRescan = YES;
                 self->_status = nil;
-                self->_result = [NSString stringWithFormat:@"Clean stopped: %@. Scan again before retrying.", validationFailure];
+                self->_result = [NSString stringWithFormat:wq_text(@"Clean stopped: %@. Scan again before retrying."), validationFailure];
                 [self.tableView reloadData];
                 [self updateButtons];
             } else {
                 self->_status = nil;
                 [self scan];
-                self->_result = [NSString stringWithFormat:@"Freed %@.%@", wq_size_text(freed),
-                                 allOk ? @"" : @" Some items could not be removed (see Log)."];
+                self->_result = [NSString stringWithFormat:wq_text(@"Freed %@.%@"), wq_size_text(freed),
+                                 allOk ? @"" : wq_text(@" Some items could not be removed (see Log).")];
             }
         });
     });

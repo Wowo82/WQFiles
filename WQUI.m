@@ -7,6 +7,7 @@
 #import "WQUI.h"
 #import "WQAccess.h"
 #import "WQLaunchServices.h"
+#import "WQLocalize.h"
 #import <sys/sysctl.h>
 #import <sys/utsname.h>
 
@@ -14,7 +15,7 @@
 NSString *wq_device_line(void)
 {
     struct utsname u;
-    NSString *machine = (uname(&u) == 0) ? @(u.machine) : @"unknown";
+    NSString *machine = (uname(&u) == 0) ? @(u.machine) : wq_text(@"unknown");
     char build[64] = {0};
     size_t len = sizeof(build);
     NSString *buildStr = (sysctlbyname("kern.osversion", build, &len, NULL, 0) == 0) ? @(build) : nil;
@@ -273,7 +274,7 @@ void wq_alert(UIViewController *host, NSString *title, NSString *message)
     if (host.presentedViewController && !host.presentedViewController.isBeingDismissed) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message
                                                             preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"OK") style:UIAlertActionStyleDefault handler:nil]];
     [host presentViewController:alert animated:YES completion:nil];
 }
 

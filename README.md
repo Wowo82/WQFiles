@@ -175,6 +175,30 @@ issue sandbox tokens or mutate installed app containers. Real iOS signing,
 token issuance, navigation/lifecycle timing, power-loss behavior and app-side
 concurrent writes still require supported-device validation.
 
+## Chinese (Simplified) interface
+
+On a device whose preferred language is Chinese, the interface is shown in
+Simplified Chinese; every other language still gets the English text.
+
+English stays the source of truth. Interface literals are passed through
+`wq_text()` (`WQLocalize.h`), which looks the string up in the table in
+`WQLocalize.m` and returns it unchanged when there is no entry. A literal that
+is edited without updating the table therefore falls back to English instead of
+showing a stale translation.
+
+- **Change a translation**: edit its value in `WQLocalize.m`.
+- **Add a string**: wrap the literal as `wq_text(@"…")` and add an entry with
+  that exact English text as the key. Format specifiers (`%@`, `%lu`, …) must
+  keep their order, because `stringWithFormat:` consumes arguments
+  positionally.
+
+Deliberately left in English: file and folder names (`Documents`, `Library`,
+`tmp`, `Backups`, `AppBackups`), because they are real paths; Apple's service
+names from the built-in LaunchServices table; the `Log` lines, which are
+diagnostics; and the validation messages in `WQAppsSupport.h` and
+`WQPlistEditorSupport.h`, which those headers return without going through the
+interface layer.
+
 ## Credit and license
 
 - Sandbox technique: [worse_query](https://github.com/forcequitOS/worse_query)

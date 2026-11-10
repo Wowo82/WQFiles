@@ -12,6 +12,7 @@
 #import "WQLaunchServices.h"
 #import "WQCore.h"
 #import "WQAppsSupport.h"
+#import "WQLocalize.h"
 #import <errno.h>
 #import <sys/stat.h>
 
@@ -85,32 +86,32 @@ static BOOL wq_backup_parts_on_disk(NSString *backup, NSArray<NSString *> *expec
     NSError *listError = nil;
     NSArray *children = [fm contentsOfDirectoryAtPath:backup error:&listError];
     if (!children) {
-        if (error) *error = listError.localizedDescription ?: @"The backup folder cannot be read";
+        if (error) *error = listError.localizedDescription ?: wq_text(@"The backup folder cannot be read");
         return NO;
     }
     NSMutableSet *actual = [NSMutableSet set];
     for (NSString *name in children) {
         if (hasManifest && [name isEqualToString:kBackupManifest]) continue;
         if (![(@[@"Documents", @"Library"]) containsObject:name]) {
-            if (error) *error = [NSString stringWithFormat:@"The backup contains an unexpected item: %@", name];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"The backup contains an unexpected item: %@"), name];
             return NO;
         }
         NSString *part = [backup stringByAppendingPathComponent:name];
         struct stat st;
         if (lstat(part.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode)) {
-            if (error) *error = [NSString stringWithFormat:@"The backup part %@ is not a directory", name];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"The backup part %@ is not a directory"), name];
             return NO;
         }
         NSError *partError = nil;
         if (![fm contentsOfDirectoryAtPath:part error:&partError]) {
-            if (error) *error = [NSString stringWithFormat:@"The backup part %@ cannot be read: %@", name,
-                                 partError.localizedDescription ?: @"unknown error"];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"The backup part %@ cannot be read: %@"), name,
+                                 partError.localizedDescription ?: wq_text(@"unknown error")];
             return NO;
         }
         [actual addObject:name];
     }
     if (![actual isEqualToSet:[NSSet setWithArray:expectedParts]]) {
-        if (error) *error = @"The backup manifest does not match the on-disk parts";
+        if (error) *error = wq_text(@"The backup manifest does not match the on-disk parts");
         return NO;
     }
     return YES;
@@ -124,24 +125,24 @@ static BOOL wq_validate_backup(NSString *backup, NSString *bundleID, BOOL allowL
                                BOOL *verifiedOut, NSString **error)
 {
     if (!wq_backup_root_child(backup, bundleID)) {
-        if (error) *error = @"The backup path is outside this app's backup folder";
+        if (error) *error = wq_text(@"The backup path is outside this app's backup folder");
         return NO;
     }
     struct stat backupStat;
     if (lstat(backup.fileSystemRepresentation, &backupStat) != 0 || !S_ISDIR(backupStat.st_mode)) {
-        if (error) *error = @"The backup folder is missing";
+        if (error) *error = wq_text(@"The backup folder is missing");
         return NO;
     }
     NSString *manifestPath = [backup stringByAppendingPathComponent:kBackupManifest];
     struct stat manifestStat;
     int manifestResult = lstat(manifestPath.fileSystemRepresentation, &manifestStat);
     if (manifestResult != 0 && errno != ENOENT) {
-        if (error) *error = [NSString stringWithFormat:@"Cannot inspect the backup manifest (errno %d)", errno];
+        if (error) *error = [NSString stringWithFormat:wq_text(@"Cannot inspect the backup manifest (errno %d)"), errno];
         return NO;
     }
     BOOL hasManifest = manifestResult == 0;
     if (hasManifest && !S_ISREG(manifestStat.st_mode)) {
-        if (error) *error = @"The backup manifest is not a regular file";
+        if (error) *error = wq_text(@"The backup manifest is not a regular file");
         return NO;
     }
     NSDictionary *manifest = hasManifest ? wq_backup_manifest(backup) : nil;
@@ -150,25 +151,25 @@ static BOOL wq_validate_backup(NSString *backup, NSString *bundleID, BOOL allowL
     if (hasManifest) {
         NSString *manifestError = nil;
         if (!WQAppsSupportManifestFields(manifest, bundleID, &parts, &manifestError)) {
-            if (error) *error = manifestError ?: @"The backup manifest is invalid";
+            if (error) *error = manifestError ?: wq_text(@"The backup manifest is invalid");
             return NO;
         }
         verified = YES;
     } else {
         if (!allowLegacy) {
-            if (error) *error = @"The safety backup has no typed manifest";
+            if (error) *error = wq_text(@"The safety backup has no typed manifest");
             return NO;
         }
         NSMutableArray *legacyParts = [NSMutableArray new];
         NSError *listError = nil;
         NSArray *children = [NSFileManager.defaultManager contentsOfDirectoryAtPath:backup error:&listError];
         if (!children) {
-            if (error) *error = listError.localizedDescription ?: @"The legacy backup cannot be read";
+            if (error) *error = listError.localizedDescription ?: wq_text(@"The legacy backup cannot be read");
             return NO;
         }
         for (NSString *name in children) {
             if (![(@[@"Documents", @"Library"]) containsObject:name]) {
-                if (error) *error = [NSString stringWithFormat:@"The legacy backup contains an unexpected item: %@", name];
+                if (error) *error = [NSString stringWithFormat:wq_text(@"The legacy backup contains an unexpected item: %@"), name];
                 return NO;
             }
             [legacyParts addObject:name];
@@ -207,7 +208,7 @@ static NSArray<NSDictionary *> *wq_app_backups(NSString *bundleID)
         if (WQAppsSupportIsInteger(manifest[@"Sequence"]) && [manifest[@"Sequence"] unsignedIntegerValue])
             sequence = [manifest[@"Sequence"] unsignedIntegerValue];
         [out addObject:@{ @"path": path, @"name": name, @"verified": @(valid && verified),
-                          @"reason": valid ? (manifest[@"Reason"] ?: @"") : (validationError ?: @"invalid manifest"),
+                          @"reason": valid ? (manifest[@"Reason"] ?: @"") : (validationError ?: wq_text(@"invalid manifest")),
                           @"created": created, @"sequence": @(sequence) }];
     }
     [out sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
@@ -221,7 +222,7 @@ static NSString *wq_backup_label(NSDictionary *__unused backup)
 {
     NSString *label = backup[@"name"];
     if ([backup[@"reason"] length]) label = [label stringByAppendingFormat:@" (%@)", [backup[@"reason"] lowercaseString]];
-    if (![backup[@"verified"] boolValue]) label = [label stringByAppendingString:@" (older, unverified)"];
+    if (![backup[@"verified"] boolValue]) label = [label stringByAppendingString:wq_text(@" (older, unverified)")];
     return label;
 }
 
@@ -230,16 +231,16 @@ static BOOL wq_validate_container(NSString *container, NSString *bundleID, dev_t
 {
     struct stat st;
     if (lstat(container.fileSystemRepresentation, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        if (error) *error = @"The app container no longer exists or is not a directory";
+        if (error) *error = wq_text(@"The app container no longer exists or is not a directory");
         return NO;
     }
     if (expectedDevice && expectedInode && (st.st_dev != expectedDevice || st.st_ino != expectedInode)) {
-        if (error) *error = @"The app container was replaced after it was scanned";
+        if (error) *error = wq_text(@"The app container was replaced after it was scanned");
         return NO;
     }
     NSString *label = wq_container_label(container);
     if (!label.length || ![label isEqualToString:bundleID]) {
-        if (error) *error = @"The app container identity no longer matches the selected app";
+        if (error) *error = wq_text(@"The app container identity no longer matches the selected app");
         return NO;
     }
     return YES;
@@ -258,7 +259,7 @@ static BOOL wq_copy_part_and_verify(NSString *src, NSString *dst, NSString **err
     if (!sourceAfter || !sourceShape || !destinationShape || !sourceBeforeExists || !srcExists || !dstExists ||
         ![sourceBefore isEqualToString:sourceAfter] ||
         ![sourceShape isEqualToString:destinationShape]) {
-        if (error && !*error) *error = @"The copied tree could not be verified (the source changed or the copy is incomplete)";
+        if (error && !*error) *error = wq_text(@"The copied tree could not be verified (the source changed or the copy is incomplete)");
         return NO;
     }
     return YES;
@@ -270,17 +271,17 @@ static BOOL wq_purge_and_verify(NSString *dir, unsigned long long *freed, NSStri
     struct stat st;
     if (!wq_stat(dir, &st)) return YES;   // a missing part is an acceptable empty result
     if (!S_ISDIR(st.st_mode)) {
-        if (error) *error = [NSString stringWithFormat:@"%@ is not a directory", dir.lastPathComponent];
+        if (error) *error = [NSString stringWithFormat:wq_text(@"%@ is not a directory"), dir.lastPathComponent];
         return NO;
     }
     NSError *listError = nil;
     NSArray *remaining = [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:&listError];
     if (!remaining) {
-        if (error) *error = listError.localizedDescription ?: [NSString stringWithFormat:@"Cannot read %@", dir.lastPathComponent];
+        if (error) *error = listError.localizedDescription ?: [NSString stringWithFormat:wq_text(@"Cannot read %@"), dir.lastPathComponent];
         return NO;
     }
     if (remaining.count) {
-        if (error) *error = [NSString stringWithFormat:@"Some items remain in %@; keep the app closed and try again", dir.lastPathComponent];
+        if (error) *error = [NSString stringWithFormat:wq_text(@"Some items remain in %@; keep the app closed and try again"), dir.lastPathComponent];
         return NO;
     }
     return YES;
@@ -292,14 +293,14 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
                                     ino_t expectedInode, NSString *reason, NSString **error)
 {
     if (!WQAppsSupportBundleIDValid(bundleID)) {
-        if (error) *error = @"The app identifier is not a valid bundle identifier";
+        if (error) *error = wq_text(@"The app identifier is not a valid bundle identifier");
         return nil;
     }
     NSFileManager *fm = NSFileManager.defaultManager;
     if (!wq_validate_container(container, bundleID, expectedDevice, expectedInode, error)) return nil;
     NSString *root = wq_app_backup_root_for_bundle(bundleID);
     if (!root.length) {
-        if (error) *error = @"Cannot locate the app backup folder";
+        if (error) *error = wq_text(@"Cannot locate the app backup folder");
         return nil;
     }
     [fm createDirectoryAtPath:root withIntermediateDirectories:YES attributes:nil error:nil];
@@ -309,7 +310,7 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
     NSString *staging = [root stringByAppendingPathComponent:
                          [kBackupStagingPrefix stringByAppendingString:NSUUID.UUID.UUIDString]];
     if (![fm createDirectoryAtPath:staging withIntermediateDirectories:NO attributes:nil error:nil]) {
-        if (error) *error = @"Cannot create the backup folder";
+        if (error) *error = wq_text(@"Cannot create the backup folder");
         return nil;
     }
     NSMutableArray *parts = [NSMutableArray new];
@@ -320,7 +321,7 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
         NSString *src = [container stringByAppendingPathComponent:part];
         struct stat st;
         if (lstat(src.fileSystemRepresentation, &st) != 0 && errno == ENOENT) continue;   // the app has none
-        if (!wq_stat(src, &st)) { ok = NO; if (error) *error = [NSString stringWithFormat:@"Cannot access %@", part]; break; }
+        if (!wq_stat(src, &st)) { ok = NO; if (error) *error = [NSString stringWithFormat:wq_text(@"Cannot access %@"), part]; break; }
         BOOL sourceExists = NO;
         NSString *sourceState = WQAppsSupportTreeSignature(src, YES, &sourceExists, error);
         if (!sourceState) { ok = NO; break; }
@@ -331,7 +332,7 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
         NSString *contentHash = WQAppsSupportTreeContentSignature(stagedPart, &stagedExists, error);
         if (!contentHash || !stagedExists) {
             ok = NO;
-            if (error && !*error) *error = @"Cannot hash the staged backup part";
+            if (error && !*error) *error = wq_text(@"Cannot hash the staged backup part");
             break;
         }
         partHashes[part] = contentHash;
@@ -345,7 +346,7 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
             NSString *before = sourceStates[part] ?: @"<missing>";
             if (!sourceState || ![before isEqualToString:sourceState]) {
                 ok = NO;
-                if (error && !*error) *error = @"The app data changed while it was being backed up; no snapshot-consistent copy was made";
+                if (error && !*error) *error = wq_text(@"The app data changed while it was being backed up; no snapshot-consistent copy was made");
                 break;
             }
         }
@@ -367,7 +368,7 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
                                 @"Sequence": @(sequence) };
     if (ok && ![manifest writeToFile:[staging stringByAppendingPathComponent:kBackupManifest] atomically:YES]) {
         ok = NO;
-        if (error) *error = @"Cannot write the backup manifest";
+        if (error) *error = wq_text(@"Cannot write the backup manifest");
     }
     BOOL published = NO;
     if (ok) {
@@ -376,14 +377,14 @@ static NSString *wq_make_app_backup(NSString *bundleID, NSString *container, dev
     if (ok) {
         if (rename(staging.fileSystemRepresentation, final.fileSystemRepresentation) != 0) {
             ok = NO;
-            if (error) *error = [NSString stringWithFormat:@"Cannot finish the backup (errno %d)", errno];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"Cannot finish the backup (errno %d)"), errno];
         } else {
             published = YES;
             NSString *validationError = nil;
             if (!wq_validate_backup(final, bundleID, NO, NULL, NULL, NULL, &validationError) ||
                 !wq_validate_container(container, bundleID, expectedDevice, expectedInode, &validationError)) {
                 ok = NO;
-                if (error) *error = validationError ?: @"The app container changed while the backup was being finalized";
+                if (error) *error = validationError ?: wq_text(@"The app container changed while the backup was being finalized");
             }
         }
     }
@@ -413,11 +414,11 @@ static BOOL wq_dir_size_cancellable(NSString *dir, WQScanCancellation *cancellat
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.title = @"Apps";
+    self.title = wq_text(@"Apps");
     UISearchController *search = [[UISearchController alloc] initWithSearchResultsController:nil];
     search.searchResultsUpdater = self;
     search.obscuresBackgroundDuringPresentation = NO;
-    search.searchBar.placeholder = @"Search apps";
+    search.searchBar.placeholder = wq_text(@"Search apps");
     self.navigationItem.searchController = search;
     self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
@@ -501,7 +502,7 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
     _scanCancellation = cancellation;
     NSUInteger generation = ++_scanGeneration;
     _scanning = YES;
-    [self setBusy:YES status:@"Finding apps…"];
+    [self setBusy:YES status:wq_text(@"Finding apps…")];
     NSString *home = [NSHomeDirectory() stringByResolvingSymlinksInPath];
     WQAppScanStep(@"finding app containers");
     WQAppScanWatch(cancellation, 0, 0);
@@ -511,14 +512,14 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
             ^(int64_t done, int64_t total, NSUInteger __unused f) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                    self->_status = [NSString stringWithFormat:@"Finding apps… %lld%%", total ? (long long)(done * 100 / total) : 0];
+                    self->_status = [NSString stringWithFormat:wq_text(@"Finding apps… %lld%%"), total ? (long long)(done * 100 / total) : 0];
                     [self.tableView reloadData];
                 });
             });
         if (!cancellation.isCancelled && !wq_display_names_loaded()) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                self->_status = @"Reading app names…";
+                self->_status = wq_text(@"Reading app names…");
                 [self.tableView reloadData];
             });
             WQAppScanStep(@"reading app names");
@@ -540,7 +541,7 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
             if ([[c stringByResolvingSymlinksInPath] isEqualToString:home]) continue;  // ourselves
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (generation != self->_scanGeneration || cancellation.isCancelled) return;
-                self->_status = [NSString stringWithFormat:@"Measuring %lu/%lu…", (unsigned long)i, (unsigned long)containers.count];
+                self->_status = [NSString stringWithFormat:wq_text(@"Measuring %lu/%lu…"), (unsigned long)i, (unsigned long)containers.count];
                 [self.tableView reloadData];
             });
             NSString *shortName = c.lastPathComponent;
@@ -569,7 +570,7 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
             app.containerInode = hasIdentity ? identity.st_ino : 0;
             if (bid.length) (void)wq_app_icon(bid);   // warm the icon off the main thread
             app.name = bid.length ? (wq_display_name(bid) ?: bid)
-                                  : [NSString stringWithFormat:@"Unknown container (%@)", c.lastPathComponent];
+                                  : [NSString stringWithFormat:wq_text(@"Unknown container (%@)"), c.lastPathComponent];
             app.bytes = 0;
             app.sizeKnown = NO;
             unsigned long long appSize = 0;
@@ -591,9 +592,9 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
             return a.bytes > b.bytes ? NSOrderedAscending : (a.bytes < b.bytes ? NSOrderedDescending : NSOrderedSame);
         }];
         NSString *note = nil;
-        if (!containers) note = @"Container enumeration failed. See Log for the statfs/inode reason.";
-        else if (!containers.count) note = @"No app containers were found. Refresh, and check Log for the enumeration reason.";
-        else if (limited || sizeLimited) note = [NSString stringWithFormat:@"%lu containers · %lu with limited access, identity, size, or no identifier. See Log.",
+        if (!containers) note = wq_text(@"Container enumeration failed. See Log for the statfs/inode reason.");
+        else if (!containers.count) note = wq_text(@"No app containers were found. Refresh, and check Log for the enumeration reason.");
+        else if (limited || sizeLimited) note = [NSString stringWithFormat:wq_text(@"%lu containers · %lu with limited access, identity, size, or no identifier. See Log."),
                                                  (unsigned long)apps.count, (unsigned long)(limited + sizeLimited)];
         dispatch_async(dispatch_get_main_queue(), ^{
             if (generation != self->_scanGeneration || cancellation.isCancelled) return;
@@ -640,14 +641,14 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
     if (_status) return _status;
     unsigned long long total = 0;
     for (WQAppItem *a in _apps) total += a.bytes;
-    if (_query.length) return [NSString stringWithFormat:@"%lu of %lu apps", (unsigned long)self.visibleApps.count, (unsigned long)_apps.count];
-    return [NSString stringWithFormat:@"%lu apps · %@ of app data", (unsigned long)_apps.count, wq_size_text(total)];
+    if (_query.length) return [NSString stringWithFormat:wq_text(@"%lu of %lu apps"), (unsigned long)self.visibleApps.count, (unsigned long)_apps.count];
+    return [NSString stringWithFormat:wq_text(@"%lu apps · %@ of app data"), (unsigned long)_apps.count, wq_size_text(total)];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    return @"Tap an app to back up, restore or clear its Documents and Library. Close the app first (swipe it away in the app switcher); operations are not snapshot-consistent while it runs. "
-            "Backups are stored in WQFiles/AppBackups and are visible in the Files app. tmp is cleared when requested but is not backed up or restored.";
+    return wq_text(@"Tap an app to back up, restore or clear its Documents and Library. Close the app first (swipe it away in the app switcher); operations are not snapshot-consistent while it runs. "
+            "Backups are stored in WQFiles/AppBackups and are visible in the Files app. tmp is cleared when requested but is not backed up or restored.");
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -666,15 +667,15 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
     NSString *identifier = app.bundleID.length ? app.bundleID : app.container.lastPathComponent;
     BOOL hasBackup = app.backups.count > 0;
     if (!app.hasAccess) {
-        c.secondaryText = [NSString stringWithFormat:@"Access unavailable · %@", identifier];
+        c.secondaryText = [NSString stringWithFormat:wq_text(@"Access unavailable · %@"), identifier];
     } else if (!app.bundleID.length) {
-        c.secondaryText = [NSString stringWithFormat:@"%@ · %@ · no identifier", wq_size_text(app.bytes), identifier];
+        c.secondaryText = [NSString stringWithFormat:wq_text(@"%@ · %@ · no identifier"), wq_size_text(app.bytes), identifier];
     } else if (!app.hasIdentity) {
-        c.secondaryText = [NSString stringWithFormat:@"%@ · %@ · container identity unavailable", wq_size_text(app.bytes), app.bundleID];
+        c.secondaryText = [NSString stringWithFormat:wq_text(@"%@ · %@ · container identity unavailable"), wq_size_text(app.bytes), app.bundleID];
     } else if (!app.sizeKnown) {
-        c.secondaryText = [NSString stringWithFormat:@"size unavailable · %@%@", app.bundleID, hasBackup ? @" · backed up" : @""];
+        c.secondaryText = [NSString stringWithFormat:wq_text(@"size unavailable · %@%@"), app.bundleID, hasBackup ? wq_text(@" · backed up") : @""];
     } else {
-        c.secondaryText = [NSString stringWithFormat:@"%@ · %@%@", wq_size_text(app.bytes), app.bundleID, hasBackup ? @" · backed up" : @""];
+        c.secondaryText = [NSString stringWithFormat:@"%@ · %@%@", wq_size_text(app.bytes), app.bundleID, hasBackup ? wq_text(@" · backed up") : @""];
     }
     c.secondaryTextProperties.color = UIColor.secondaryLabelColor;
     c.image = wq_app_icon(app.bundleID) ?: [UIImage systemImageNamed:@"app.dashed"];
@@ -691,22 +692,22 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
     WQAppItem *app = self.visibleApps[(NSUInteger)indexPath.row];
     if (!app.hasAccess || !app.bundleID.length || !app.hasIdentity) {
         NSString *why = app.hasAccess && app.bundleID.length && !app.hasIdentity
-            ? @"The container identity is unavailable or changed. Backup, restore and clear are disabled for this entry."
+            ? wq_text(@"The container identity is unavailable or changed. Backup, restore and clear are disabled for this entry.")
             : app.hasAccess
-            ? @"The container identifier is unavailable. Backup, restore and clear are disabled for this entry."
-            : @"Sandbox access is unavailable. Check the App Group and see Log; only the container path can be copied.";
+            ? wq_text(@"The container identifier is unavailable. Backup, restore and clear are disabled for this entry.")
+            : wq_text(@"Sandbox access is unavailable. Check the App Group and see Log; only the container path can be copied.");
         UIAlertController *sheet = [UIAlertController alertControllerWithTitle:app.name
             message:[NSString stringWithFormat:@"%@\n\n%@", app.container, why]
             preferredStyle:UIAlertControllerStyleActionSheet];
         if (app.hasAccess) {
-            [sheet addAction:[UIAlertAction actionWithTitle:@"Open Data Folder" style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
+            [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Open Data Folder") style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
                 [self.navigationController pushViewController:[[WQDirViewController alloc] initWithPath:app.container title:app.name] animated:YES];
             }]];
         }
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Copy Container Path" style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
+        [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Copy Container Path") style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
             UIPasteboard.generalPasteboard.string = app.container;
         }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
         UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
         sheet.popoverPresentationController.sourceView = cell ?: self.view;
         sheet.popoverPresentationController.sourceRect = (cell ?: self.view).bounds;
@@ -715,32 +716,32 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
     }
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:app.name
         message:[NSString stringWithFormat:@"%@\n%@", app.bundleID,
-                 app.sizeKnown ? [NSString stringWithFormat:@"%@ of data", wq_size_text(app.bytes)] : @"size unavailable"]
+                 app.sizeKnown ? [NSString stringWithFormat:wq_text(@"%@ of data"), wq_size_text(app.bytes)] : wq_text(@"size unavailable")]
         preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Back Up Data" style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
+    [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Back Up Data") style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
         [self backUp:app then:nil];
     }]];
     NSArray *backups = app.backups;
     NSString *latest = backups.firstObject[@"path"];
     if (latest) {
-        NSString *title = backups.count == 1 ? [NSString stringWithFormat:@"Restore Backup (%@)", wq_backup_label(backups.firstObject)]
-                                             : [NSString stringWithFormat:@"Restore a Backup… (%lu)", (unsigned long)backups.count];
+        NSString *title = backups.count == 1 ? [NSString stringWithFormat:wq_text(@"Restore Backup (%@)"), wq_backup_label(backups.firstObject)]
+                                             : [NSString stringWithFormat:wq_text(@"Restore a Backup… (%lu)"), (unsigned long)backups.count];
         [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
             [self pickBackupToRestore:app from:[tableView cellForRowAtIndexPath:indexPath]];
         }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Share Latest Backup (AirDrop…)"
+        [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Share Latest Backup (AirDrop…)")
                                                   style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
             UITableViewCell *c = [tableView cellForRowAtIndexPath:indexPath];
             wq_share_folder(self, latest, [NSString stringWithFormat:@"%@ %@", app.name, latest.lastPathComponent], c);
         }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Clear Data…" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
+    [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Clear Data…") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
         [self confirmClear:app];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Open Data Folder" style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
+    [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Open Data Folder") style:UIAlertActionStyleDefault handler:^(UIAlertAction *__unused a) {
         [self.navigationController pushViewController:[[WQDirViewController alloc] initWithPath:app.container title:app.name] animated:YES];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
     sheet.popoverPresentationController.sourceView = cell ?: self.view;
     sheet.popoverPresentationController.sourceRect = (cell ?: self.view).bounds;
@@ -756,23 +757,23 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
 
 - (void)backUp:(WQAppItem *)app then:(void (^)(BOOL ok))next
 {
-    [self setBusy:YES status:[NSString stringWithFormat:@"Backing up %@…", app.name]];
+    [self setBusy:YES status:[NSString stringWithFormat:wq_text(@"Backing up %@…"), app.name]];
     dispatch_async(wq_io(), ^{
         NSString *error = nil;
         NSString *dest = wq_make_app_backup(app.bundleID, app.container, app.containerDevice,
                                              app.containerInode, nil, &error);
         dispatch_async(dispatch_get_main_queue(), ^{
             if (next) { next(dest != nil); return; }
-            [self finish:dest ? @"Backed up" : @"Backup failed"
-                 message:dest ? [NSString stringWithFormat:@"Saved to AppBackups/%@/%@", app.bundleID, dest.lastPathComponent]
-                              : [NSString stringWithFormat:@"Nothing was saved: %@", error ?: @"see Log"]];
+            [self finish:dest ? wq_text(@"Backed up") : wq_text(@"Backup failed")
+                 message:dest ? [NSString stringWithFormat:wq_text(@"Saved to AppBackups/%@/%@"), app.bundleID, dest.lastPathComponent]
+                              : [NSString stringWithFormat:wq_text(@"Nothing was saved: %@"), error ?: wq_text(@"see Log")]];
         });
     });
 }
 
 - (void)clear:(WQAppItem *)app
 {
-    [self setBusy:YES status:[NSString stringWithFormat:@"Clearing %@…", app.name]];
+    [self setBusy:YES status:[NSString stringWithFormat:wq_text(@"Clearing %@…"), app.name]];
     dispatch_async(wq_io(), ^{
         unsigned long long freed = 0;
         NSString *error = nil;
@@ -785,30 +786,30 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
         if (ok && !wq_validate_container(app.container, app.bundleID, app.containerDevice, app.containerInode, &error)) ok = NO;
         wq_log(@"clear data: %@ freed %llu ok=%d", app.bundleID, freed, ok);
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self finish:ok ? @"Data cleared" : @"Partly cleared"
-                 message:[NSString stringWithFormat:@"Freed about %@.%@ Open %@ to start fresh.", wq_size_text(freed),
-                          ok ? @"" : [NSString stringWithFormat:@" %@. Keep the app closed and try again.", error ?: @"Some items could not be removed (see Log)"], app.name]];
+            [self finish:ok ? wq_text(@"Data cleared") : wq_text(@"Partly cleared")
+                 message:[NSString stringWithFormat:wq_text(@"Freed about %@.%@ Open %@ to start fresh."), wq_size_text(freed),
+                          ok ? @"" : [NSString stringWithFormat:wq_text(@" %@. Keep the app closed and try again."), error ?: wq_text(@"Some items could not be removed (see Log)")], app.name]];
         });
     });
 }
 
 - (void)confirmClear:(WQAppItem *)app
 {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Clear %@?", app.name]
-        message:@"Deletes everything in the app's Documents, Library and tmp, like a fresh install. "
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:wq_text(@"Clear %@?"), app.name]
+        message:wq_text(@"Deletes everything in the app's Documents, Library and tmp, like a fresh install. "
                 "The optional backup covers Documents and Library only; tmp is discarded and cannot be restored. "
-                "Logins, settings and offline content are lost. Close the app first."
+                "Logins, settings and offline content are lost. Close the app first.")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Back Up, Then Clear" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Back Up, Then Clear") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
         [self backUp:app then:^(BOOL ok) {
             if (ok) [self clear:app];
-            else [self finish:@"Not cleared" message:@"The backup did not complete, so nothing was deleted."];
+            else [self finish:wq_text(@"Not cleared") message:wq_text(@"The backup did not complete, so nothing was deleted.")];
         }];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Clear Without Backup" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Clear Without Backup") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
         [self clear:app];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -816,13 +817,13 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
 {
     NSArray *backups = app.backups;
     if (backups.count == 1) { [self confirmRestore:app from:backups.firstObject]; return; }
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Restore which backup?" message:app.name
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:wq_text(@"Restore which backup?") message:app.name
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
     for (NSDictionary *__unused b in backups) {
         [sheet addAction:[UIAlertAction actionWithTitle:wq_backup_label(b) style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction *__unused a) { [self confirmRestore:app from:b]; }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     sheet.popoverPresentationController.sourceView = source ?: self.view;
     sheet.popoverPresentationController.sourceRect = (source ?: self.view).bounds;
     [self presentViewController:sheet animated:YES completion:nil];
@@ -832,16 +833,16 @@ static void WQAppScanWatch(WQScanCancellation *cancellation, NSUInteger lastSeri
 {
     NSString *path = backup[@"path"];
     NSString *warning = [backup[@"verified"] boolValue] ? @""
-        : [NSString stringWithFormat:@"\n\nThis backup is unverified (%@). WQ Files will re-check its parts before changing anything.",
-           backup[@"reason"] ?: @"no typed manifest"];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"Restore %@?", app.name]
-        message:[NSString stringWithFormat:@"Replaces the app's current Documents and Library with the backup from %@; tmp is left untouched. "
-                 "The current data is backed up first, and put back if anything fails. Close the app first: a running app can make the operation non-snapshot-consistent.%@",
+        : [NSString stringWithFormat:wq_text(@"\n\nThis backup is unverified (%@). WQ Files will re-check its parts before changing anything."),
+           backup[@"reason"] ?: wq_text(@"no typed manifest")];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:wq_text(@"Restore %@?"), app.name]
+        message:[NSString stringWithFormat:wq_text(@"Replaces the app's current Documents and Library with the backup from %@; tmp is left untouched. "
+                 "The current data is backed up first, and put back if anything fails. Close the app first: a running app can make the operation non-snapshot-consistent.%@"),
                  wq_backup_label(backup), warning]
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Restore" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
-        [self setBusy:YES status:[NSString stringWithFormat:@"Restoring %@…", app.name]];
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:wq_text(@"Restore") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *__unused a) {
+        [self setBusy:YES status:[NSString stringWithFormat:wq_text(@"Restoring %@…"), app.name]];
         dispatch_async(wq_io(), ^{
             NSString *title = nil, *message = nil;
             [self restore:app from:path title:&title message:&message];
@@ -867,7 +868,7 @@ static BOOL wq_replace_part(NSString *src, NSString *dst, NSString **error)
     BOOL ok = wq_purge_and_verify(dst, &ignored, error);
     if (ok) {
         ok = wq_copy_part_and_verify(staging, dst, error);
-        if (!ok && error && !*error) *error = [NSString stringWithFormat:@"Could not restore %@", dst.lastPathComponent];
+        if (!ok && error && !*error) *error = [NSString stringWithFormat:wq_text(@"Could not restore %@"), dst.lastPathComponent];
     }
     [NSFileManager.defaultManager removeItemAtPath:staging error:nil];
     return ok;
@@ -887,7 +888,7 @@ static BOOL wq_read_restore_journal(NSMutableDictionary **journalOut, BOOL *exis
     if (![NSFileManager.defaultManager fileExistsAtPath:path]) return YES;
     NSDictionary *journal = [NSDictionary dictionaryWithContentsOfFile:path];
     if (![journal isKindOfClass:NSDictionary.class]) {
-        if (error) *error = @"The restore recovery journal is unreadable";
+        if (error) *error = wq_text(@"The restore recovery journal is unreadable");
         return NO;
     }
     if (existsOut) *existsOut = YES;
@@ -900,11 +901,11 @@ static BOOL wq_write_restore_journal(NSDictionary *journal, NSString **error)
     NSString *path = wq_restore_journal_path();
     if (![NSFileManager.defaultManager createDirectoryAtPath:path.stringByDeletingLastPathComponent
                                   withIntermediateDirectories:YES attributes:nil error:nil]) {
-        if (error) *error = @"Cannot create the restore recovery folder";
+        if (error) *error = wq_text(@"Cannot create the restore recovery folder");
         return NO;
     }
     if (![journal writeToFile:path atomically:YES]) {
-        if (error) *error = @"Cannot write the restore recovery journal";
+        if (error) *error = wq_text(@"Cannot write the restore recovery journal");
         return NO;
     }
     return YES;
@@ -915,7 +916,7 @@ static BOOL wq_remove_restore_journal(NSString **error);
 static BOOL wq_begin_restore_journal(WQAppItem *app, NSString *backup, NSString *safety, NSString **error)
 {
     if (!wq_backup_root_child(backup, app.bundleID) || !wq_backup_root_child(safety, app.bundleID)) {
-        if (error) *error = @"The restore paths are not inside this app's backup folder";
+        if (error) *error = wq_text(@"The restore paths are not inside this app's backup folder");
         return NO;
     }
     BOOL exists = NO;
@@ -934,7 +935,7 @@ static BOOL wq_begin_restore_journal(WQAppItem *app, NSString *backup, NSString 
         }
         if (state == WQAppsSupportJournalCommitted &&
             !wq_remove_restore_journal(&readError)) {
-            if (error) *error = readError ?: @"Cannot remove the completed restore journal";
+            if (error) *error = readError ?: wq_text(@"Cannot remove the completed restore journal");
             return NO;
         }
     }
@@ -969,7 +970,7 @@ static BOOL wq_remove_restore_journal(NSString **error)
     if (![fm fileExistsAtPath:path]) return YES;
     NSError *removeError = nil;
     if (![fm removeItemAtPath:path error:&removeError]) {
-        if (error) *error = removeError.localizedDescription ?: @"Cannot remove the restore recovery journal";
+        if (error) *error = removeError.localizedDescription ?: wq_text(@"Cannot remove the restore recovery journal");
         return NO;
     }
     return YES;
@@ -989,14 +990,14 @@ static BOOL wq_validate_backup_hashes(NSString *backup, NSArray<NSString *> *par
     for (NSString *part in parts) {
         NSString *expected = hashes[part];
         if (![expected isKindOfClass:NSString.class] || !expected.length) {
-            if (error) *error = [NSString stringWithFormat:@"The backup has no hash for %@", part];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"The backup has no hash for %@"), part];
             return NO;
         }
         BOOL exists = NO;
         NSString *actual = WQAppsSupportTreeContentSignature([backup stringByAppendingPathComponent:part],
                                                               &exists, error);
         if (!actual || !exists || ![actual isEqualToString:expected]) {
-            if (error) *error = [NSString stringWithFormat:@"The backup's %@ contents changed after it was created", part];
+            if (error) *error = [NSString stringWithFormat:wq_text(@"The backup's %@ contents changed after it was created"), part];
             return NO;
         }
     }
@@ -1056,7 +1057,7 @@ NSString *wq_recover_interrupted_restore(void)
     }
     if (![state isEqualToString:@"Active"]) {
         wq_log(@"restore recovery: unknown journal state at %@", path);
-        return @"An interrupted restore was found with an unknown recovery state. The journal was retained for manual recovery.";
+        return wq_text(@"An interrupted restore was found with an unknown recovery state. The journal was retained for manual recovery.");
     }
     NSString *bundleID = journal[@"BundleID"], *container = journal[@"Container"], *safety = journal[@"Safety"];
     NSString *backup = journal[@"Backup"];
@@ -1075,29 +1076,29 @@ NSString *wq_recover_interrupted_restore(void)
         wq_validate_container(container, bundleID, device, inode, &journalError);
     if (!journalTyped) {
         wq_log(@"restore recovery: invalid journal or incomplete safety backup at %@", path);
-        return [NSString stringWithFormat:@"An interrupted restore was found, but its recovery journal is invalid. The journal was retained for manual recovery%@.",
+        return [NSString stringWithFormat:wq_text(@"An interrupted restore was found, but its recovery journal is invalid. The journal was retained for manual recovery%@."),
                 journalError.length ? [NSString stringWithFormat:@" (%@)", journalError] : @""];
     }
     NSString *error = nil;
     if (!wq_rollback_safety(container, bundleID, safety, device, inode, &error)) {
         wq_log(@"restore recovery for %@: FAILED (%@)", bundleID, error);
-        return [NSString stringWithFormat:@"Automatic recovery of %@ failed: %@. The safety backup is %@; see Log.",
-                bundleID, error ?: @"unknown error", safety.lastPathComponent];
+        return [NSString stringWithFormat:wq_text(@"Automatic recovery of %@ failed: %@. The safety backup is %@; see Log."),
+                bundleID, error ?: wq_text(@"unknown error"), safety.lastPathComponent];
     }
     NSString *commitError = nil;
     NSString *removeError = nil;
     if (!wq_mark_restore_journal_committed(&commitError)) {
         wq_log(@"restore recovery for %@: recovered, journal commit failed (%@)", bundleID, commitError);
-        return [NSString stringWithFormat:@"An interrupted restore of %@ was recovered, but its journal could not be committed (%@). It will be checked again at the next launch.",
-                bundleID, commitError ?: @"unknown error"];
+        return [NSString stringWithFormat:wq_text(@"An interrupted restore of %@ was recovered, but its journal could not be committed (%@). It will be checked again at the next launch."),
+                bundleID, commitError ?: wq_text(@"unknown error")];
     }
     if (!wq_remove_restore_journal(&removeError)) {
         wq_log(@"restore recovery for %@: recovered, cleanup pending (%@)", bundleID, removeError);
-        return [NSString stringWithFormat:@"An interrupted restore of %@ was recovered. Its committed journal will be cleaned up at the next launch (%@).",
-                bundleID, removeError ?: @"cleanup failed"];
+        return [NSString stringWithFormat:wq_text(@"An interrupted restore of %@ was recovered. Its committed journal will be cleaned up at the next launch (%@)."),
+                bundleID, removeError ?: wq_text(@"cleanup failed")];
     }
     wq_log(@"restore recovery for %@: OK", bundleID);
-    return [NSString stringWithFormat:@"An interrupted restore of %@ was recovered from its safety backup.", bundleID];
+    return [NSString stringWithFormat:wq_text(@"An interrupted restore of %@ was recovered from its safety backup."), bundleID];
 }
 
 - (void)restore:(WQAppItem *)app from:(NSString *)backup title:(NSString **)title message:(NSString **)message
@@ -1109,18 +1110,18 @@ NSString *wq_recover_interrupted_restore(void)
     BOOL verified = NO;
     NSString *error = nil;
     if (!wq_validate_backup(backup, app.bundleID, YES, &parts, &manifest, &verified, &error)) {
-        *title = @"Not restored";
-        *message = [NSString stringWithFormat:@"The backup is not safe to restore (%@). Nothing was changed.", error ?: @"invalid manifest"];
+        *title = wq_text(@"Not restored");
+        *message = [NSString stringWithFormat:wq_text(@"The backup is not safe to restore (%@). Nothing was changed."), error ?: wq_text(@"invalid manifest")];
         return;
     }
     if (!verified && !parts.count) {
-        *title = @"Not restored";
-        *message = @"The legacy backup is empty. Nothing was changed.";
+        *title = wq_text(@"Not restored");
+        *message = wq_text(@"The legacy backup is empty. Nothing was changed.");
         return;
     }
     if (!wq_validate_container(app.container, app.bundleID, app.containerDevice, app.containerInode, &error)) {
-        *title = @"Not restored";
-        *message = [NSString stringWithFormat:@"The selected app container is no longer safe to use (%@). Nothing was changed.", error];
+        *title = wq_text(@"Not restored");
+        *message = [NSString stringWithFormat:wq_text(@"The selected app container is no longer safe to use (%@). Nothing was changed."), error];
         return;
     }
     // 2. Keep the current data and a durable recovery journal before touching
@@ -1128,15 +1129,15 @@ NSString *wq_recover_interrupted_restore(void)
     NSString *safety = wq_make_app_backup(app.bundleID, app.container, app.containerDevice,
                                            app.containerInode, kBackupReasonBeforeRestore, &error);
     if (!safety) {
-        *title = @"Not restored";
-        *message = [NSString stringWithFormat:@"The current data couldn't be backed up first (%@). Nothing was changed.",
-                    error ?: @"see Log"];
+        *title = wq_text(@"Not restored");
+        *message = [NSString stringWithFormat:wq_text(@"The current data couldn't be backed up first (%@). Nothing was changed."),
+                    error ?: wq_text(@"see Log")];
         return;
     }
     if (!wq_begin_restore_journal(app, backup, safety, &error)) {
-        *title = @"Not restored";
-        *message = [NSString stringWithFormat:@"%@. Nothing was changed; the safety backup was retained at %@ for manual recovery.",
-                    error ?: @"The recovery journal could not be written", safety.lastPathComponent];
+        *title = wq_text(@"Not restored");
+        *message = [NSString stringWithFormat:wq_text(@"%@. Nothing was changed; the safety backup was retained at %@ for manual recovery."),
+                    error ?: wq_text(@"The recovery journal could not be written"), safety.lastPathComponent];
         return;
     }
     // 3. Re-read and validate the selected backup immediately before the first
@@ -1149,7 +1150,7 @@ NSString *wq_recover_interrupted_restore(void)
         !wq_validate_backup(backup, app.bundleID, YES, &preRestoreParts, &preRestoreManifest, NULL, &error) ||
         ![preRestoreParts isEqualToArray:parts] ||
         !wq_validate_backup_hashes(backup, preRestoreParts, preRestoreManifest, &error)) {
-        error = error ?: @"The selected backup changed before restore";
+        error = error ?: wq_text(@"The selected backup changed before restore");
     }
     BOOL ok = error == nil;
     NSDictionary *restorePlan = WQRestorePlan([parts containsObject:@"Documents"],
@@ -1177,7 +1178,7 @@ NSString *wq_recover_interrupted_restore(void)
                !wq_validate_backup(backup, app.bundleID, YES, &postRestoreParts, NULL, NULL, &error) ||
                ![postRestoreParts isEqualToArray:parts])) {
         ok = NO;
-        error = error ?: @"The selected backup changed during restore";
+        error = error ?: wq_text(@"The selected backup changed during restore");
     }
     if (ok) {
         NSString *commitError = nil;
@@ -1186,16 +1187,16 @@ NSString *wq_recover_interrupted_restore(void)
             BOOL removed = wq_remove_restore_journal(&removeError);
             if (!removed) wq_log(@"restore %@: journal cleanup pending (%@)", app.bundleID, removeError);
             wq_log(@"restore %@ from %@: OK", app.bundleID, backup.lastPathComponent);
-            *title = @"Restored";
-            NSString *cleanup = removed ? @"" : @" The recovery journal is committed and will be cleaned up at the next launch.";
-            *message = [NSString stringWithFormat:@"Open %@ to use the restored Documents and Library. The data from before is kept as backup %@; tmp was not changed. Keep the app closed during this operation.%@",
+            *title = wq_text(@"Restored");
+            NSString *cleanup = removed ? @"" : wq_text(@" The recovery journal is committed and will be cleaned up at the next launch.");
+            *message = [NSString stringWithFormat:wq_text(@"Open %@ to use the restored Documents and Library. The data from before is kept as backup %@; tmp was not changed. Keep the app closed during this operation.%@"),
                         app.name, safety.lastPathComponent, cleanup];
             return;
         }
         // The journal is still Active. Rolling back is the only safe outcome
         // if it cannot be marked committed, because a completed restore must
         // not be rolled back by the next launch.
-        error = [NSString stringWithFormat:@"The restore finished, but its recovery journal could not be committed (%@)", commitError];
+        error = [NSString stringWithFormat:wq_text(@"The restore finished, but its recovery journal could not be committed (%@)"), commitError];
     }
     wq_log(@"restore %@ from %@: FAILED (%@), rolling back", app.bundleID, backup.lastPathComponent, error);
     NSString *rollbackError = nil;
@@ -1206,16 +1207,16 @@ NSString *wq_recover_interrupted_restore(void)
     NSString *cleanupError = nil;
     BOOL cleared = NO;
     if (rolledBack) cleared = wq_finish_restore_journal(&cleanupError);
-    if (!rolledBack) cleanupError = @"kept for recovery at the next launch";
+    if (!rolledBack) cleanupError = wq_text(@"kept for recovery at the next launch");
     wq_log(@"restore %@: rollback %@, journal %@", app.bundleID,
-           rolledBack ? @"OK" : @"FAILED", cleared ? @"cleared" : cleanupError);
-    *title = @"Restore failed";
+           rolledBack ? wq_text(@"OK") : @"FAILED", cleared ? @"cleared" : cleanupError);
+    *title = wq_text(@"Restore failed");
     *message = rolledBack
-        ? [NSString stringWithFormat:@"%@. The previous data was put back.%@", error ?: @"Some files couldn't be written",
-           cleared ? @"" : @" Recovery will run again at the next launch because the journal could not be removed."]
-        : [NSString stringWithFormat:@"%@, and putting the previous data back also failed (%@). It is in backup %@; see the Log.%@",
-           error ?: @"Some files couldn't be written", rollbackError ?: @"see Log", safety.lastPathComponent,
-           cleared ? @"" : @" Recovery will run again at the next launch."];
+        ? [NSString stringWithFormat:wq_text(@"%@. The previous data was put back.%@"), error ?: wq_text(@"Some files couldn't be written"),
+           cleared ? @"" : wq_text(@" Recovery will run again at the next launch because the journal could not be removed.")]
+        : [NSString stringWithFormat:wq_text(@"%@, and putting the previous data back also failed (%@). It is in backup %@; see the Log.%@"),
+           error ?: wq_text(@"Some files couldn't be written"), rollbackError ?: wq_text(@"see Log"), safety.lastPathComponent,
+           cleared ? @"" : wq_text(@" Recovery will run again at the next launch.")];
 }
 
 @end

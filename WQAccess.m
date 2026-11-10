@@ -15,6 +15,7 @@
 #import "WQAccess.h"
 #import "WQCore.h"
 #import "WQAccessSafety.h"
+#import "WQLocalize.h"
 #import <dlfcn.h>
 #import <objc/message.h>
 #import <dirent.h>
@@ -378,7 +379,7 @@ static BOOL wq_stream(int in, int out, NSString **errorText)
 {
     static const size_t kChunk = 1 << 20;
     uint8_t *buf = malloc(kChunk);
-    if (!buf) { if (errorText) *errorText = @"Out of memory"; return NO; }
+    if (!buf) { if (errorText) *errorText = wq_text(@"Out of memory"); return NO; }
     BOOL ok = YES;
     for (;;) {
         ssize_t n = read(in, buf, kChunk);
@@ -407,7 +408,7 @@ static BOOL wq_backup_fd(NSString *path, int fd, NSString **backupPath, NSString
     NSString *root = WQCanonicalVarPath(wq_backup_root());
     if (!WQAbsolutePathGrammar(original) || wq_is_backup_storage_path(original)) {
         wq_log(@"backup: refusing invalid path or mutation of backup storage: %@", path);
-        if (errorText) *errorText = @"The path is invalid or belongs to backup storage.";
+        if (errorText) *errorText = wq_text(@"The path is invalid or belongs to backup storage.");
         return NO;
     }
     static NSDateFormatter *fmt;
@@ -426,7 +427,7 @@ static BOOL wq_backup_fd(NSString *path, int fd, NSString **backupPath, NSString
         [NSString stringWithFormat:@"%@-%llu", [fmt stringFromDate:NSDate.date], (unsigned long long)++counter];
     [lock unlock];
     if (!stamp) {
-        if (errorText) *errorText = @"Cannot allocate a backup name.";
+        if (errorText) *errorText = wq_text(@"Cannot allocate a backup name.");
         return NO;
     }
     NSString *dest = [[root stringByAppendingPathComponent:stamp] stringByAppendingString:original];
@@ -462,7 +463,7 @@ static BOOL wq_backup_fd(NSString *path, int fd, NSString **backupPath, NSString
         if (fstat(fd, &sourceStat) == 0 && fstatfs(parent, &space) == 0) {
             unsigned long long available = (unsigned long long)space.f_bavail * (unsigned long long)space.f_bsize;
             if ((unsigned long long)sourceStat.st_size > available) {
-                error = @"Not enough free space for a full backup copy";
+                error = wq_text(@"Not enough free space for a full backup copy");
                 wq_log(@"backup: %@ (%@)", path, error);
                 if (errorText) *errorText = error;
                 close(parent);
@@ -484,7 +485,7 @@ static BOOL wq_backup_fd(NSString *path, int fd, NSString **backupPath, NSString
     close(parent);
     wq_log(@"backup: %@ -> %@", path, ok ? dest : error ?: @"FAILED");
     if (ok && backupPath) *backupPath = dest;
-    if (!ok && errorText) *errorText = error ?: @"Backup copy failed.";
+    if (!ok && errorText) *errorText = error ?: wq_text(@"Backup copy failed.");
     return ok;
 }
 
@@ -521,7 +522,7 @@ NSDictionary<NSString *, NSNumber *> *wq_file_version(NSString *path)
 
 static BOOL wq_changed(NSString **errorText)
 {
-    if (errorText) *errorText = @"The file changed after it was opened. Your edits were not written; reopen it and compare the changes.";
+    if (errorText) *errorText = wq_text(@"The file changed after it was opened. Your edits were not written; reopen it and compare the changes.");
     return NO;
 }
 
@@ -557,9 +558,9 @@ static BOOL wq_mutation_current(NSString *path, WQMutation *mutation, BOOL versi
 static BOOL wq_mutation_open(NSString *path, NSDictionary *expected, WQMutation *mutation, int flags, NSString **errorText)
 {
     *mutation = (WQMutation){ .fd = -1, .parent = -1 };
-    if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path))) { if (errorText) *errorText = @"Invalid file path"; return NO; }
+    if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path))) { if (errorText) *errorText = wq_text(@"Invalid file path"); return NO; }
     if (wq_is_backup_storage_path(path)) {
-        if (errorText) *errorText = @"Backup storage cannot be overwritten or deleted through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be overwritten or deleted through the file browser.");
         return NO;
     }
     NSString *parent = path.stringByDeletingLastPathComponent;
@@ -595,8 +596,8 @@ static BOOL wq_mutation_backup(NSString *path, WQMutation *mutation, NSString **
     if (!wq_mutation_current(path, mutation, YES, errorText)) return NO;
     NSString *backupError = nil;
     if (!wq_backup_fd(path, mutation->fd, backup, &backupError)) {
-        if (errorText) *errorText = [NSString stringWithFormat:@"Backup of the current file failed, nothing was written: %@",
-                                     backupError ?: @"unknown error"];
+        if (errorText) *errorText = [NSString stringWithFormat:wq_text(@"Backup of the current file failed, nothing was written: %@"),
+                                     backupError ?: wq_text(@"unknown error")];
         return NO;
     }
     WQ_MUTATION_HOOK(@"backedUp", path);
@@ -677,29 +678,29 @@ static BOOL wq_mutation_finish(NSString *path, WQMutation *mutation, NSString *b
     if (ok && fsync(mutation->fd) != 0) { ok = NO; failure = wq_errno(errno); }
     WQ_MUTATION_HOOK(@"written", path);
     if (ok && !wq_mutation_current(path, mutation, NO, errorText)) {
-        ok = NO; failure = @"The target path was replaced during writing";
+        ok = NO; failure = wq_text(@"The target path was replaced during writing");
     }
     if (ok && (expectedData || expectedRuns)) {
         verifiedVersion = wq_verified_saved_version(mutation, expectedData, expectedRuns);
         if (!verifiedVersion || !wq_mutation_current(path, mutation, NO, errorText)) {
             ok = NO;
             rollbackAllowed = NO; // A concurrent writer may own the newer contents.
-            failure = @"Saved contents could not be verified; possible concurrent modification";
+            failure = wq_text(@"Saved contents could not be verified; possible concurrent modification");
         }
     }
     if (!ok) {
         NSString *rollbackError = nil;
         BOOL restored = rollbackAllowed && backup && wq_restore_backup_fd(mutation, backup, &rollbackError);
-        if (errorText) *errorText = [NSString stringWithFormat:@"%@; %@. Backup: %@", failure ?: @"Write failed",
-            restored ? @"the original descriptor contents were restored" :
-            (rollbackAllowed ? [@"rollback failed: " stringByAppendingString:rollbackError ?: @"unknown error"] :
-             @"no rollback was attempted to avoid overwriting concurrent changes"), backup ?: @"none"];
+        if (errorText) *errorText = [NSString stringWithFormat:@"%@; %@. Backup: %@", failure ?: wq_text(@"Write failed"),
+            restored ? wq_text(@"the original descriptor contents were restored") :
+            (rollbackAllowed ? [wq_text(@"rollback failed: ") stringByAppendingString:rollbackError ?: wq_text(@"unknown error")] :
+             wq_text(@"no rollback was attempted to avoid overwriting concurrent changes")), backup ?: @"none"];
     }
     // Rollback must finish before close releases the lock. A close failure has
     // no safe reopen/rollback path; retain the durable backup and report it.
     if (close(mutation->fd) != 0 && ok) {
         ok = NO;
-        if (errorText) *errorText = [NSString stringWithFormat:@"Close failed: %@. Backup: %@", wq_errno(errno), backup];
+        if (errorText) *errorText = [NSString stringWithFormat:wq_text(@"Close failed: %@. Backup: %@"), wq_errno(errno), backup];
     }
     mutation->fd = -1;
     wq_mutation_close(mutation);
@@ -712,7 +713,7 @@ NSArray<NSString *> *wq_list(NSString *dir, NSString **errorText)
     NSError *error = nil;
     NSArray *items = [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:&error];
     if (!items && wq_grant(dir)) items = [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:&error];
-    if (!items && errorText) *errorText = error.localizedDescription ?: @"Cannot list this folder";
+    if (!items && errorText) *errorText = error.localizedDescription ?: wq_text(@"Cannot list this folder");
     return items;
 }
 
@@ -830,7 +831,7 @@ BOOL wq_write_from_file(NSString *path, NSString *source, NSString **errorText)
     if (!wq_mutation_open(path, nil, &mutation, O_RDWR, errorText)) { close(in); return NO; }
     struct stat src;
     if (fstat(in, &src) != 0 || WQSameObject(&src, &mutation.before)) {
-        if (errorText) *errorText = @"Source and destination are the same file";
+        if (errorText) *errorText = wq_text(@"Source and destination are the same file");
         close(in); wq_mutation_close(&mutation); return NO;
     }
     NSDictionary *sourceVersion = wq_version_for_stat(&src);
@@ -843,7 +844,7 @@ BOOL wq_write_from_file(NSString *path, NSString *source, NSString **errorText)
     if (ok && (fstat(in, &srcAfter) != 0 ||
                ![sourceVersion isEqualToDictionary:wq_version_for_stat(&srcAfter)])) {
         ok = NO;
-        error = @"The source changed while it was being copied";
+        error = wq_text(@"The source changed while it was being copied");
     }
     if (!ok && !error) error = wq_errno(errno);
     close(in);
@@ -853,12 +854,12 @@ BOOL wq_write_from_file(NSString *path, NSString *source, NSString **errorText)
 BOOL wq_create_file_from(NSString *path, NSString *source, NSString **errorText)
 {
     if (wq_is_backup_storage_path(path)) {
-        if (errorText) *errorText = @"Backup storage cannot be modified through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be modified through the file browser.");
         return NO;
     }
     NSString *canonical = WQCanonicalVarPath(path);
     if (!WQAbsolutePathGrammar(canonical)) {
-        if (errorText) *errorText = @"Invalid file path";
+        if (errorText) *errorText = wq_text(@"Invalid file path");
         return NO;
     }
     int in = WQOpenRegularAt(AT_FDCWD, source.fileSystemRepresentation, O_RDONLY, 0);
@@ -883,7 +884,7 @@ BOOL wq_create_file_from(NSString *path, NSString *source, NSString **errorText)
     if (fstat(in, &srcBefore) != 0) {
         close(fd); close(in); close(parent);
         unlinkat(parent, name, 0);
-        if (errorText) *errorText = @"Cannot inspect the copy source";
+        if (errorText) *errorText = wq_text(@"Cannot inspect the copy source");
         return NO;
     }
     NSDictionary *sourceVersion = wq_version_for_stat(&srcBefore);
@@ -894,7 +895,7 @@ BOOL wq_create_file_from(NSString *path, NSString *source, NSString **errorText)
     if (ok && (fstat(in, &srcAfter) != 0 ||
                ![sourceVersion isEqualToDictionary:wq_version_for_stat(&srcAfter)])) {
         ok = NO;
-        error = @"The source changed while it was being copied";
+        error = wq_text(@"The source changed while it was being copied");
     }
     close(in);
     if (close(fd) != 0 && ok) { ok = NO; error = wq_errno(errno); }
@@ -909,11 +910,11 @@ BOOL wq_create_file_from(NSString *path, NSString *source, NSString **errorText)
 BOOL wq_copy_to_local(NSString *path, NSString *dest, NSString **errorText)
 {
     if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path)) || !WQAbsolutePathGrammar(WQCanonicalVarPath(dest))) {
-        if (errorText) *errorText = @"Invalid copy path";
+        if (errorText) *errorText = wq_text(@"Invalid copy path");
         return NO;
     }
     if (wq_is_backup_storage_path(dest)) {
-        if (errorText) *errorText = @"Backup storage cannot be modified through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be modified through the file browser.");
         return NO;
     }
     int in = wq_open(path, O_RDONLY, 0);
@@ -922,7 +923,7 @@ BOOL wq_copy_to_local(NSString *path, NSString *dest, NSString **errorText)
     if (fstat(in, &source) != 0) { close(in); return NO; }
     // stat intentionally follows a destination alias for this identity check.
     if (stat(dest.fileSystemRepresentation, &destination) == 0 && WQSameObject(&source, &destination)) {
-        close(in); if (errorText) *errorText = @"Source and destination are the same file"; return NO;
+        close(in); if (errorText) *errorText = wq_text(@"Source and destination are the same file"); return NO;
     }
     int parent = WQOpenDirectoryNoLinks(dest.stringByDeletingLastPathComponent);
     if (parent < 0) { if (errorText) *errorText = wq_errno(errno); close(in); return NO; }
@@ -932,19 +933,19 @@ BOOL wq_copy_to_local(NSString *path, NSString *dest, NSString **errorText)
     BOOL ok = wq_stream(in, out, errorText);
     struct stat after;
     if (ok && (fstat(in, &after) != 0 || ![wq_version_for_stat(&source) isEqualToDictionary:wq_version_for_stat(&after)])) {
-        ok = NO; if (errorText) *errorText = @"The source changed while it was copied";
+        ok = NO; if (errorText) *errorText = wq_text(@"The source changed while it was copied");
     }
     close(in);
     if (close(out) != 0 && ok) { ok = NO; if (errorText) *errorText = wq_errno(errno); }
     // Recheck aliases after the potentially long stream, still before replacing.
     if (ok && fstatat(parent, dest.lastPathComponent.fileSystemRepresentation, &destination, 0) == 0 && WQSameObject(&source, &destination)) {
-        ok = NO; if (errorText) *errorText = @"Source and destination are the same file";
+        ok = NO; if (errorText) *errorText = wq_text(@"Source and destination are the same file");
     }
     if (ok) {
         struct stat entry;
         if (fstatat(parent, dest.lastPathComponent.fileSystemRepresentation, &entry, AT_SYMLINK_NOFOLLOW) == 0 &&
             !S_ISREG(entry.st_mode) && !S_ISLNK(entry.st_mode)) {
-            ok = NO; if (errorText) *errorText = @"Destination is not a regular file";
+            ok = NO; if (errorText) *errorText = wq_text(@"Destination is not a regular file");
         }
     }
     if (ok && renameat(parent, stage.fileSystemRepresentation, parent, dest.lastPathComponent.fileSystemRepresentation) != 0) {
@@ -966,9 +967,14 @@ NSString *wq_permission_hint(NSString *path, BOOL forWriting)
                  : (st.st_gid == getgid() ? (st.st_mode >> 3 & need) != 0 : (st.st_mode & need) != 0);
     if (allowed) return nil;
     NSString *owner = st.st_uid == 0 ? @"root" : [NSString stringWithFormat:@"uid %d", (int)st.st_uid];
-    return [NSString stringWithFormat:@"This file belongs to %@ (mode %o) and only its owner may %@ it. "
-            "WQ Files reaches the folder, but runs as mobile (uid %d), so no app can %@ this file.",
-            owner, st.st_mode & 07777, forWriting ? @"change" : @"read", (int)me, forWriting ? @"change" : @"open"];
+    // Two whole sentences instead of one with an inserted verb: a translated
+    // sentence cannot rely on an English verb landing in the right place.
+    NSString *hint = forWriting
+        ? wq_text(@"This file belongs to %@ (mode %o) and only its owner may change it. "
+           "WQ Files reaches the folder, but runs as mobile (uid %d), so no app can change this file.")
+        : wq_text(@"This file belongs to %@ (mode %o) and only its owner may read it. "
+           "WQ Files reaches the folder, but runs as mobile (uid %d), so no app can open this file.");
+    return [NSString stringWithFormat:hint, owner, st.st_mode & 07777, (int)me];
 }
 
 NSData *wq_read_range(NSString *path, unsigned long long offset, NSUInteger length, NSString **errorText)
@@ -998,7 +1004,7 @@ static BOOL wq_patch_checked(NSString *path, NSDictionary<NSNumber *, NSData *> 
     unsigned long long size = (unsigned long long)mutation.before.st_size;
     for (NSNumber *off in runs) {
         if (!WQPatchRangeValid(off.unsignedLongLongValue, runs[off].length, size)) {
-            if (errorText) *errorText = @"A change lies past the end of the file";
+            if (errorText) *errorText = wq_text(@"A change lies past the end of the file");
             wq_mutation_close(&mutation); return NO;
         }
     }
@@ -1057,7 +1063,7 @@ BOOL wq_backup_unit_deletable(NSString *path)
 BOOL wq_delete_backup(NSString *path, NSString **errorText)
 {
     if (!wq_backup_unit_deletable(path)) {
-        if (errorText) *errorText = @"Only a complete backup unit can be deleted here.";
+        if (errorText) *errorText = wq_text(@"Only a complete backup unit can be deleted here.");
         return NO;
     }
     NSString *canonical = WQCanonicalVarPath(path);
@@ -1075,7 +1081,7 @@ BOOL wq_delete_backup(NSString *path, NSString **errorText)
     if (S_ISDIR(st.st_mode)) {
         unsigned long long ignored = 0;
         if (!wq_purge_contents_cancellable(canonical, &ignored, nil)) {
-            if (errorText) *errorText = @"Could not remove everything inside the backup.";
+            if (errorText) *errorText = wq_text(@"Could not remove everything inside the backup.");
             close(parent);
             return NO;
         }
@@ -1105,11 +1111,11 @@ static int wq_open_directory(NSString *path)
 BOOL wq_create_file(NSString *path, NSData *data, NSString **errorText)
 {
     if (wq_is_backup_storage_path(path)) {
-        if (errorText) *errorText = @"Backup storage cannot be modified through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be modified through the file browser.");
         return NO;
     }
     if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path))) {
-        if (errorText) *errorText = @"Invalid file path";
+        if (errorText) *errorText = wq_text(@"Invalid file path");
         return NO;
     }
     NSString *parentPath = path.stringByDeletingLastPathComponent;
@@ -1138,11 +1144,11 @@ BOOL wq_create_file(NSString *path, NSData *data, NSString **errorText)
 BOOL wq_create_dir(NSString *path, NSString **errorText)
 {
     if (wq_is_backup_storage_path(path)) {
-        if (errorText) *errorText = @"Backup storage cannot be modified through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be modified through the file browser.");
         return NO;
     }
     if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path))) {
-        if (errorText) *errorText = @"Invalid folder path";
+        if (errorText) *errorText = wq_text(@"Invalid folder path");
         return NO;
     }
     NSString *parentPath = path.stringByDeletingLastPathComponent;
@@ -1163,11 +1169,11 @@ BOOL wq_create_dir(NSString *path, NSString **errorText)
 BOOL wq_delete(NSString *path, NSString **errorText)
 {
     if (wq_is_backup_storage_path(path)) {
-        if (errorText) *errorText = @"Backup storage cannot be overwritten or deleted through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be overwritten or deleted through the file browser.");
         return NO;
     }
     if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path))) {
-        if (errorText) *errorText = @"Invalid file path";
+        if (errorText) *errorText = wq_text(@"Invalid file path");
         return NO;
     }
     NSString *parentPath = path.stringByDeletingLastPathComponent;
@@ -1178,7 +1184,7 @@ BOOL wq_delete(NSString *path, NSString **errorText)
     if (fstatat(parent, name, &st, AT_SYMLINK_NOFOLLOW) != 0 &&
         !(wq_is_denied(errno) && wq_grant(parentPath) &&
           fstatat(parent, name, &st, AT_SYMLINK_NOFOLLOW) == 0)) {
-        if (errorText) *errorText = errno == ENOENT ? @"Not found" : wq_errno(errno);
+        if (errorText) *errorText = errno == ENOENT ? wq_text(@"Not found") : wq_errno(errno);
         close(parent);
         return NO;
     }
@@ -1202,7 +1208,7 @@ BOOL wq_delete(NSString *path, NSString **errorText)
     int err = errno;
     close(parent);
     wq_log(@"delete: %@ -> %@", path, rc == 0 ? @"OK" : wq_errno(err));
-    if (rc != 0 && errorText) *errorText = err == ENOTEMPTY ? @"Only empty folders can be deleted" : wq_errno(err);
+    if (rc != 0 && errorText) *errorText = err == ENOTEMPTY ? wq_text(@"Only empty folders can be deleted") : wq_errno(err);
     return rc == 0;
 }
 
@@ -1210,12 +1216,12 @@ BOOL wq_rename(NSString *path, NSString *newName, NSString **errorText)
 {
     if (!WQAbsolutePathGrammar(WQCanonicalVarPath(path)) || newName.length == 0 || [newName containsString:@"/"] ||
         [newName isEqualToString:@"."] || [newName isEqualToString:@".."] || [newName rangeOfString:@"\0"].location != NSNotFound) {
-        if (errorText) *errorText = @"Invalid name";
+        if (errorText) *errorText = wq_text(@"Invalid name");
         return NO;
     }
     if (wq_is_backup_storage_path(path) ||
         wq_is_backup_storage_path([path.stringByDeletingLastPathComponent stringByAppendingPathComponent:newName])) {
-        if (errorText) *errorText = @"Backup storage cannot be renamed through the file browser.";
+        if (errorText) *errorText = wq_text(@"Backup storage cannot be renamed through the file browser.");
         return NO;
     }
     NSString *parentPath = path.stringByDeletingLastPathComponent;
@@ -1228,7 +1234,7 @@ BOOL wq_rename(NSString *path, NSString *newName, NSString **errorText)
     int err = errno;
     close(parent);
     wq_log(@"rename: %@ -> %@: %@", path, newName, rc == 0 ? @"OK" : wq_errno(err));
-    if (rc != 0 && errorText) *errorText = err == EEXIST ? @"An item with that name already exists" : wq_errno(err);
+    if (rc != 0 && errorText) *errorText = err == EEXIST ? wq_text(@"An item with that name already exists") : wq_errno(err);
     return rc == 0;
 }
 
@@ -2177,7 +2183,7 @@ BOOL wq_copy_contents(NSString *srcDir, NSString *dstDir, NSString **errorText)
     dstDir = WQCanonicalVarPath(dstDir);
     if (!WQAbsolutePathGrammar(srcDir) || !WQAbsolutePathGrammar(dstDir) || [srcDir isEqual:dstDir] ||
         [srcDir hasPrefix:[dstDir stringByAppendingString:@"/"]] || [dstDir hasPrefix:[srcDir stringByAppendingString:@"/"]]) {
-        if (errorText) *errorText = @"Source and destination trees overlap or have invalid paths";
+        if (errorText) *errorText = wq_text(@"Source and destination trees overlap or have invalid paths");
         return NO;
     }
     NSFileManager *fm = NSFileManager.defaultManager;
@@ -2188,20 +2194,20 @@ BOOL wq_copy_contents(NSString *srcDir, NSString *dstDir, NSString **errorText)
         destination = WQCreateDirectoriesNoLinksMode(dstDir, 0755);
     struct stat srcStat, dstStat;
     if (destination < 0 || fstat(source, &srcStat) != 0 || fstat(destination, &dstStat) != 0 || WQSameObject(&srcStat, &dstStat)) {
-        if (errorText) *errorText = @"Cannot safely open distinct source and destination folders";
+        if (errorText) *errorText = wq_text(@"Cannot safely open distinct source and destination folders");
         close(source); if (destination >= 0) close(destination); return NO;
     }
     NSError *error = nil;
     NSArray *children = [fm contentsOfDirectoryAtPath:srcDir error:&error];
     if (!children) {
-        if (errorText) *errorText = error.localizedDescription ?: @"Cannot read the source folder";
+        if (errorText) *errorText = error.localizedDescription ?: wq_text(@"Cannot read the source folder");
         close(source); close(destination); return NO;
     }
     BOOL allOk = YES;
     NSString *firstFailure = nil;
     for (NSString *name in children) {
         if (!wq_directory_current(srcDir, source) || !wq_directory_current(dstDir, destination)) {
-            allOk = NO; firstFailure = firstFailure ?: @"A copy root changed during copying"; break;
+            allOk = NO; firstFailure = firstFailure ?: wq_text(@"A copy root changed during copying"); break;
         }
         NSString *src = [srcDir stringByAppendingPathComponent:name];
         NSString *dst = [dstDir stringByAppendingPathComponent:name];
@@ -2246,7 +2252,7 @@ BOOL wq_copy_contents(NSString *srcDir, NSString *dstDir, NSString **errorText)
         if (cleaned) cleaned = unlinkat(destination, stageName.fileSystemRepresentation, AT_REMOVEDIR) == 0 && fsync(destination) == 0;
         if (!ok || !cleaned) {
             allOk = NO;
-            NSString *message = cleaned ? failure : [NSString stringWithFormat:@"%@; staging/recovery contents retained at %@", failure ?: wq_errno(errno), stagePath];
+            NSString *message = cleaned ? failure : [NSString stringWithFormat:wq_text(@"%@; staging/recovery contents retained at %@"), failure ?: wq_errno(errno), stagePath];
             firstFailure = firstFailure ?: message;
             wq_log(@"copy: %@ -> %@: %@", src, dst, message);
         }
